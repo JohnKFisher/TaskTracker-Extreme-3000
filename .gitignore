@@ -1,0 +1,19 @@
+# Dependencies
+node_modules/
+
+# Build output
+dist/
+
+# User data — contains API keys, tasks, notes (never commit)
+data/
+
+# Electron builder cache
+.cache/
+build/
+
+# Claude Code local settings (machine-specific paths)
+.claude/
+
+# OS files
+.DS_Store
+Thumbs.db

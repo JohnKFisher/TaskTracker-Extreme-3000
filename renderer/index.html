@@ -1,0 +1,137 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>TaskTracker Extreme 3000</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <!-- Custom Title Bar -->
+  <div id="title-bar">
+    <div id="title-bar-drag">
+      <span id="title-text">TaskTracker Extreme 3000</span>
+    </div>
+    <div id="title-bar-buttons">
+      <button id="btn-pin" class="title-btn" title="Toggle always-on-top">&#128204;</button>
+      <button id="btn-minimize" class="title-btn" title="Minimize">&#8211;</button>
+      <button id="btn-close" class="title-btn" title="Hide to tray">&#10005;</button>
+    </div>
+  </div>
+
+  <!-- Tab Navigation -->
+  <div id="tab-bar">
+    <button class="tab active" data-tab="tasks">Tasks <span id="tab-count-tasks" class="tab-count"></span></button>
+    <button class="tab" data-tab="tickets">Tickets <span id="tab-count-tickets" class="tab-count"></span></button>
+    <button class="tab" data-tab="notes">Notes</button>
+  </div>
+
+  <!-- Tasks Tab (Kanban) -->
+  <div id="tab-tasks" class="tab-content active">
+    <div id="kanban">
+      <div class="kanban-section" data-column="standing">
+        <div class="section-header" data-column="standing">
+          <span class="collapse-arrow">&#9660;</span>
+          <span class="section-title">Standing</span>
+          <span class="task-count">0</span>
+        </div>
+        <div class="task-list" data-column="standing"></div>
+      </div>
+
+      <div class="kanban-section" data-column="priority">
+        <div class="section-header" data-column="priority">
+          <span class="collapse-arrow">&#9660;</span>
+          <span class="section-title">Priority</span>
+          <span class="task-count">0</span>
+        </div>
+        <div class="task-list" data-column="priority"></div>
+      </div>
+
+      <div class="kanban-section" data-column="inprogress">
+        <div class="section-header" data-column="inprogress">
+          <span class="collapse-arrow">&#9660;</span>
+          <span class="section-title">In Progress</span>
+          <span class="task-count">0</span>
+        </div>
+        <div class="task-list" data-column="inprogress"></div>
+      </div>
+
+      <div class="kanban-section" data-column="todo">
+        <div class="section-header" data-column="todo">
+          <span class="collapse-arrow">&#9660;</span>
+          <span class="section-title">To-Do</span>
+          <span class="task-count">0</span>
+        </div>
+        <div class="task-list" data-column="todo"></div>
+      </div>
+
+      <div class="kanban-section" data-column="rainyday">
+        <div class="section-header" data-column="rainyday">
+          <span class="collapse-arrow">&#9660;</span>
+          <span class="section-title">Rainy Day</span>
+          <span class="task-count">0</span>
+        </div>
+        <div class="task-list" data-column="rainyday"></div>
+      </div>
+
+      <div class="kanban-section" data-column="done">
+        <div class="section-header" data-column="done">
+          <span class="collapse-arrow">&#9660;</span>
+          <span class="section-title">Done</span>
+          <span class="task-count">0</span>
+          <button id="btn-clear-done" class="clear-done-btn" title="Clear done tasks">Clear</button>
+        </div>
+        <div class="task-list" data-column="done"></div>
+      </div>
+    </div>
+
+    <!-- Add Task -->
+    <div id="add-task-bar">
+      <input type="text" id="new-task-input" placeholder="Add a new task..." />
+      <select id="new-task-column">
+        <option value="standing">Standing</option>
+        <option value="priority">Priority</option>
+        <option value="inprogress">In Progress</option>
+        <option value="todo" selected>To-Do</option>
+        <option value="rainyday">Rainy Day</option>
+      </select>
+      <button id="btn-add-task">+</button>
+      <button id="btn-sort-alpha" title="Sort all columns alphabetically">A&#8595;Z</button>
+    </div>
+  </div>
+
+  <!-- Tickets Tab -->
+  <div id="tab-tickets" class="tab-content">
+    <div id="tickets-header">
+      <button id="btn-refresh-tickets" title="Refresh tickets">&#8635; Refresh</button>
+      <label id="show-hidden-label">
+        <input type="checkbox" id="show-hidden-tickets" /> Show hidden
+      </label>
+      <button id="btn-change-api-key" title="Change API key">&#9881;</button>
+    </div>
+    <div id="tickets-status"></div>
+    <div id="tickets-list"></div>
+
+    <!-- API Key Setup (shown when no key configured) -->
+    <div id="api-key-setup" style="display: none;">
+      <p>Enter your Desk365 API key to connect.</p>
+      <p class="hint">Find it at Settings &gt; Integrations &gt; API in Desk365.</p>
+      <input type="password" id="api-key-input" placeholder="Paste API key..." />
+      <button id="btn-save-api-key">Connect</button>
+    </div>
+  </div>
+
+  <!-- Notes Tab -->
+  <div id="tab-notes" class="tab-content">
+    <textarea id="notes-area" placeholder="Type your notes here..."></textarea>
+  </div>
+
+  <div id="build-stamp">Built: March 30, 2026, #4</div>
+
+  <script src="../node_modules/sortablejs/Sortable.min.js"></script>
+  <script src="app.js"></script>
+  <script src="kanban.js"></script>
+  <script src="notes.js"></script>
+  <script src="tickets.js"></script>
+</body>
+</html>
