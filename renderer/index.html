@@ -24,6 +24,7 @@
     <button class="tab active" data-tab="tasks">Tasks <span id="tab-count-tasks" class="tab-count"></span></button>
     <button class="tab" data-tab="tickets">Tickets <span id="tab-count-tickets" class="tab-count"></span></button>
     <button class="tab" data-tab="notes">Notes</button>
+    <button class="tab settings-tab" data-tab="settings" title="Settings">&#9881;</button>
   </div>
 
   <!-- Tasks Tab (Kanban) -->
@@ -126,12 +127,30 @@
     <textarea id="notes-area" placeholder="Type your notes here..."></textarea>
   </div>
 
+  <!-- Settings Tab -->
+  <div id="tab-settings" class="tab-content">
+    <div id="settings-panel">
+      <div class="settings-section">
+        <div class="settings-section-title">Sync Folder</div>
+        <p class="settings-hint">
+          Point to a cloud-synced folder (OneDrive, Dropbox, iCloud Drive, etc.) to share tasks, notes, and config between your Windows and Mac machines. Window position stays machine-specific and is never synced.
+        </p>
+        <span id="sync-folder-display" class="settings-value">None — using local app data folder</span>
+        <div class="settings-buttons">
+          <button id="btn-browse-sync-folder" class="settings-btn">Browse...</button>
+          <button id="btn-clear-sync-folder" class="settings-btn hidden">Clear</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
   <div id="build-stamp">Built: March 30, 2026, #4</div>
 
-  <script src="../node_modules/sortablejs/Sortable.min.js"></script>
+  <script src="vendor/Sortable.min.js"></script>
   <script src="app.js"></script>
   <script src="kanban.js"></script>
   <script src="notes.js"></script>
   <script src="tickets.js"></script>
+  <script src="settings.js"></script>
 </body>
 </html>

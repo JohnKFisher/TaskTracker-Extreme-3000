@@ -13,7 +13,7 @@ function alphaSortColumn(col) {
 
 // Load tasks from file
 async function loadTasks() {
-  const data = await window.api.loadFile('tasks.json');
+  const data = await invoke('load_file', { filename: 'tasks.json' });
   if (data && data.tasks) {
     tasks = data.tasks;
   } else {
@@ -24,7 +24,7 @@ async function loadTasks() {
 
 // Save tasks to file (debounced)
 const saveTasks = debounce(async () => {
-  await window.api.saveFile('tasks.json', { schemaVersion: 1, tasks });
+  await invoke('save_file', { filename: 'tasks.json', data: { schemaVersion: 1, tasks } });
 }, 500);
 
 // Render all columns
@@ -103,11 +103,10 @@ function createTaskCard(task) {
   // Double-click to expand/edit
   card.addEventListener('dblclick', (e) => {
     if (e.target.closest('.task-delete') || e.target.closest('.task-notes-area') || e.target.closest('.task-title-input')) return;
-    if (card.classList.contains('expanded')) return; // already expanded
+    if (card.classList.contains('expanded')) return;
 
     card.classList.add('expanded');
 
-    // Replace title with input
     const titleSpan = card.querySelector('.task-title');
     if (titleSpan) {
       const input = document.createElement('input');
@@ -129,7 +128,6 @@ function createTaskCard(task) {
       input.select();
     }
 
-    // Add notes textarea
     const notesArea = document.createElement('textarea');
     notesArea.className = 'task-notes-area';
     notesArea.value = task.notes || '';
@@ -143,7 +141,6 @@ function createTaskCard(task) {
     });
     card.appendChild(notesArea);
 
-    // Remove tooltip if showing
     if (tooltip) {
       tooltip.remove();
       tooltip = null;
@@ -222,14 +219,12 @@ COLUMNS.forEach(column => {
       const taskId = evt.item.dataset.id;
       const newColumn = evt.to.dataset.column;
 
-      // Update task column
       const task = tasks.find(t => t.id === taskId);
       if (task) {
         task.column = newColumn;
         task.updatedAt = new Date().toISOString();
       }
 
-      // Alpha-sort affected columns and update counts
       [evt.from.dataset.column, newColumn].forEach(col => {
         alphaSortColumn(col);
         const list = document.querySelector(`.task-list[data-column="${col}"]`);
@@ -239,7 +234,6 @@ COLUMNS.forEach(column => {
       });
 
       saveTasks();
-      // Re-render columns that were affected so order reflects alpha sort
       [evt.from.dataset.column, newColumn].forEach(col => renderColumn(col));
     },
   });

@@ -1,38 +1,17 @@
 {
   "name": "tasktracker-extreme-3000",
-  "version": "1.0.0",
+  "version": "2.0.0",
   "description": "Personal sidebar task tracker with Desk365 integration",
-  "main": "main.js",
   "scripts": {
-    "start": "electron .",
+    "dev": "tauri dev",
+    "build": "tauri build",
     "prebuild": "node scripts/bump-build.js",
-    "build": "electron-builder --win portable"
+    "tauri": "tauri"
   },
   "keywords": [],
-  "author": "John Kenneth Fisher",
   "license": "ISC",
   "type": "commonjs",
   "devDependencies": {
-    "electron": "^41.0.3",
-    "electron-builder": "^26.8.1"
-  },
-  "dependencies": {
-    "sortablejs": "^1.15.7"
-  },
-  "build": {
-    "appId": "com.jkfisher.tasktracker",
-    "productName": "TaskTracker Extreme 3000",
-    "win": {
-      "target": "dir",
-      "signAndEditExecutable": false
-    },
-    "files": [
-      "main.js",
-      "preload.js",
-      "appbar.js",
-      "renderer/**/*",
-      "scripts/**/*",
-      "node_modules/**/*"
-    ]
+    "@tauri-apps/cli": "^2"
   }
 }

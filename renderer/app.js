@@ -1,5 +1,9 @@
 // === App Initialization & Tab Switching ===
 
+// Tauri API globals — available because withGlobalTauri: true in tauri.conf.json
+const invoke = window.__TAURI__.core.invoke;
+const listen = window.__TAURI__.event.listen;
+
 // Debounce utility
 function debounce(fn, ms) {
   let timer;
@@ -29,32 +33,39 @@ document.querySelectorAll('.tab').forEach(tab => {
 
 // Title bar buttons
 document.getElementById('btn-minimize').addEventListener('click', () => {
-  window.api.minimize();
+  invoke('window_minimize');
 });
 
 document.getElementById('btn-close').addEventListener('click', () => {
-  window.api.close();
+  invoke('hide_window');
 });
 
 const pinBtn = document.getElementById('btn-pin');
 pinBtn.classList.add('pinned'); // starts as always-on-top
 pinBtn.addEventListener('click', async () => {
-  const isOnTop = await window.api.toggleAlwaysOnTop();
+  const isOnTop = await invoke('toggle_always_on_top');
   pinBtn.classList.toggle('pinned', isOnTop);
 });
 
 // Section collapse toggle
 document.querySelectorAll('.section-header').forEach(header => {
   header.addEventListener('click', (e) => {
-    // Don't collapse if clicking clear button
     if (e.target.closest('.clear-done-btn')) return;
     const section = header.closest('.kanban-section');
     section.classList.toggle('collapsed');
   });
 });
 
-// Listen for task updates from main process (e.g., quick-add)
-window.api.onTasksUpdated(() => {
+// Window opacity on focus/blur (frameless window, so body opacity dims the content)
+window.addEventListener('blur', () => {
+  document.body.style.opacity = '0.7';
+});
+window.addEventListener('focus', () => {
+  document.body.style.opacity = '1';
+});
+
+// Listen for task updates from backend (e.g., quick-add)
+listen('tasks-updated', () => {
   if (typeof loadTasks === 'function') {
     loadTasks();
   }

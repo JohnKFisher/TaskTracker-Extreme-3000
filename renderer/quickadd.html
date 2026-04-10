@@ -19,17 +19,18 @@
     <input type="text" class="quick-add-input" id="quick-input" placeholder="Quick add task (Enter to save, Esc to cancel)..." autofocus />
   </div>
   <script>
+    const { invoke } = window.__TAURI__.core;
     const input = document.getElementById('quick-input');
     input.addEventListener('keydown', (e) => {
       if (e.key === 'Enter') {
         const title = input.value.trim();
         if (title) {
-          window.api.quickAddTask(title);
+          invoke('quick_add_task', { title });
         } else {
-          window.api.closeQuickAdd();
+          invoke('close_quick_add');
         }
       } else if (e.key === 'Escape') {
-        window.api.closeQuickAdd();
+        invoke('close_quick_add');
       }
     });
   </script>

@@ -1,0 +1,72 @@
+name: Build
+
+# Runs on every push to main, and can be triggered manually from
+# the GitHub Actions tab on any branch (useful for testing builds
+# before merging).
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false   # if one platform fails, the others still finish
+      matrix:
+        include:
+          - platform: windows-latest
+            target: x86_64-pc-windows-msvc
+            artifact-name: windows-x64
+
+          - platform: macos-14          # Apple Silicon (M1/M2/M3)
+            target: aarch64-apple-darwin
+            artifact-name: macos-apple-silicon
+
+          - platform: macos-13          # Intel Mac
+            target: x86_64-apple-darwin
+            artifact-name: macos-intel
+
+    runs-on: ${{ matrix.platform }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Install Rust stable
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      # Cache the Rust target/ directory so subsequent builds are fast
+      - name: Cache Rust build artifacts
+        uses: swatinem/rust-cache@v2
+        with:
+          workspaces: './src-tauri -> target'
+
+      - name: Install npm dependencies
+        run: npm install
+
+      # Build the Tauri app for the target platform.
+      # Note: macOS builds are unsigned — opening on macOS for the
+      # first time requires right-click > Open to bypass Gatekeeper.
+      # Windows builds are also unsigned — Windows SmartScreen may
+      # warn on first run; click "More info" > "Run anyway".
+      - name: Build Tauri app
+        uses: tauri-apps/tauri-action@v0
+        with:
+          args: --target ${{ matrix.target }}
+
+      # Upload the finished installer/bundle as a downloadable artifact.
+      # Artifacts are kept for 30 days and available under the
+      # Actions > (workflow run) > Artifacts section on GitHub.
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: tasktracker-extreme-3000-${{ matrix.artifact-name }}
+          path: src-tauri/target/${{ matrix.target }}/release/bundle/
+          retention-days: 30

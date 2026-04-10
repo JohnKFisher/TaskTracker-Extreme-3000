@@ -18,8 +18,8 @@ const showHiddenCheckbox = document.getElementById('show-hidden-tickets');
 
 // Initialize tickets
 async function initTickets() {
-  config = await window.api.loadFile('config.json');
-  const hiddenData = await window.api.loadFile('hidden-tickets.json');
+  config = await invoke('load_file', { filename: 'config.json' });
+  const hiddenData = await invoke('load_file', { filename: 'hidden-tickets.json' });
   hiddenTickets = (hiddenData && hiddenData.tickets) || [];
 
   if (config && config.desk365Domain) {
@@ -43,31 +43,33 @@ document.getElementById('btn-save-api-key').addEventListener('click', async () =
   if (!key) return;
 
   config = { apiKey: key };
-  await window.api.saveFile('config.json', config);
+  await invoke('save_file', { filename: 'config.json', data: config });
   apiKeySetup.style.display = 'none';
   fetchAndRenderTickets();
   startPolling();
 });
 
-// Enter key for API key
+// Enter key for API key input
 document.getElementById('api-key-input').addEventListener('keydown', (e) => {
   if (e.key === 'Enter') document.getElementById('btn-save-api-key').click();
 });
 
-// Fetch tickets from Desk365 API
+// Fetch tickets from Desk365 API (HTTP is handled in Rust to avoid CORS)
 async function fetchAndRenderTickets() {
   if (!config || !config.apiKey) return;
 
   ticketsStatus.textContent = 'Loading tickets...';
   refreshBtn.disabled = true;
 
-  const result = await window.api.fetchTickets(config.apiKey, config.desk365Domain);
+  const result = await invoke('fetch_tickets', {
+    apiKey: config.apiKey,
+    desk365Domain: config.desk365Domain,
+  });
 
   refreshBtn.disabled = false;
 
   if (!result.success) {
     ticketsStatus.textContent = 'Error: ' + result.error;
-    // Show API key setup on any error so user can re-enter
     apiKeySetup.style.display = 'block';
     document.getElementById('api-key-input').value = '';
     return;
@@ -75,25 +77,24 @@ async function fetchAndRenderTickets() {
 
   const newTickets = result.tickets;
 
-  // Check for genuinely new tickets (not seen before) for notifications
+  // Notify for genuinely new tickets (not seen in previous poll)
   if (seenTicketNumbers.size > 0) {
     const brandNew = newTickets.filter(t => !seenTicketNumbers.has(t.TicketNumber));
     if (brandNew.length > 0) {
       const summary = brandNew.length === 1
         ? `#${brandNew[0].TicketNumber}: ${brandNew[0].Subject}`
         : `${brandNew.length} new tickets`;
-      window.api.showNotification('New Desk365 Tickets', summary);
+      invoke('show_notification', { title: 'New Desk365 Tickets', body: summary });
     }
   }
 
-  // Sort by ticket number descending (newest first)
+  // Sort newest first
   newTickets.sort((a, b) => {
     const numA = parseInt(a.TicketNumber, 10) || 0;
     const numB = parseInt(b.TicketNumber, 10) || 0;
     return numB - numA;
   });
 
-  // Update seen set
   seenTicketNumbers = new Set(newTickets.map(t => t.TicketNumber));
   currentTickets = newTickets;
   updateTabCount('tickets', currentTickets.length);
@@ -124,7 +125,7 @@ function renderTickets() {
     const info = document.createElement('div');
     info.className = 'ticket-info';
     info.addEventListener('click', () => {
-      window.api.openExternal(DESK365_BASE + ticket.TicketNumber);
+      invoke('open_external', { url: DESK365_BASE + ticket.TicketNumber });
     });
 
     const num = document.createElement('span');
@@ -179,7 +180,10 @@ async function toggleHideTicket(ticketNumber) {
   } else {
     hiddenTickets.push(ticketNumber);
   }
-  await window.api.saveFile('hidden-tickets.json', { tickets: hiddenTickets });
+  await invoke('save_file', {
+    filename: 'hidden-tickets.json',
+    data: { tickets: hiddenTickets },
+  });
   renderTickets();
 }
 
