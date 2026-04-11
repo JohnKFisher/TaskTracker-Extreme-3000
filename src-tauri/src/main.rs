@@ -5,7 +5,7 @@ use std::path::PathBuf;
 use std::sync::Mutex;
 
 use serde::{Deserialize, Serialize};
-use tauri::{AppHandle, Manager, State};
+use tauri::{AppHandle, Emitter, Manager, State};
 
 // ─── State ────────────────────────────────────────────────────────────────────
 
@@ -608,7 +608,9 @@ fn main() {
             // Persist window position/size whenever the user moves or resizes
             tauri::WindowEvent::Moved(_) | tauri::WindowEvent::Resized(_) => {
                 if window.label() == "main" {
-                    save_window_state(window);
+                    if let Some(ww) = window.app_handle().get_webview_window("main") {
+                        save_window_state(&ww);
+                    }
                 }
             }
             _ => {}

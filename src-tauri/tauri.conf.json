@@ -4,10 +4,10 @@
   "version": "2.0.0",
   "identifier": "com.tasktracker.extreme3000",
   "build": {
-    "frontendDist": "../renderer",
-    "withGlobalTauri": true
+    "frontendDist": "../renderer"
   },
   "app": {
+    "withGlobalTauri": true,
     "windows": [
       {
         "label": "main",
