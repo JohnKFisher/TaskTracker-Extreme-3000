@@ -22,7 +22,7 @@ jobs:
             target: aarch64-apple-darwin
             artifact-name: macos-apple-silicon
 
-          - platform: macos-13          # Intel Mac
+          - platform: macos-latest      # Intel Mac (macos-13 deprecated)
             target: x86_64-apple-darwin
             artifact-name: macos-intel
 
@@ -35,7 +35,7 @@ jobs:
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: lts/*
 
       - name: Install Rust stable
         uses: dtolnay/rust-toolchain@stable

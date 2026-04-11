@@ -448,7 +448,7 @@ fn open_quick_add(app: &AppHandle) {
         })
         .unwrap_or((300.0, 100.0));
 
-    let _ = tauri::WebviewWindowBuilder::new(
+    let win = tauri::WebviewWindowBuilder::new(
         app,
         "quick-add",
         tauri::WebviewUrl::App("quickadd.html".into()),
@@ -460,12 +460,19 @@ fn open_quick_add(app: &AppHandle) {
     .always_on_top(true)
     .skip_taskbar(true)
     .transparent(true)
-    .on_window_event(|window, event| {
-        if let tauri::WindowEvent::Focused(false) = event {
-            let _ = window.close();
-        }
-    })
     .build();
+
+    // Close the quick-add window whenever it loses focus
+    if let Ok(w) = win {
+        let app_handle = app.clone();
+        w.on_window_event(move |event| {
+            if let tauri::WindowEvent::Focused(false) = event {
+                if let Some(qa) = app_handle.get_webview_window("quick-add") {
+                    let _ = qa.close();
+                }
+            }
+        });
+    }
 }
 
 fn setup_tray(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Error>> {
@@ -544,7 +551,23 @@ fn main() {
         }))
         .plugin(tauri_plugin_notification::init())
         .plugin(tauri_plugin_dialog::init())
-        .plugin(tauri_plugin_global_shortcut::init())
+        .plugin(
+            tauri_plugin_global_shortcut::Builder::new()
+                .with_handler(|app, shortcut, event| {
+                    use tauri_plugin_global_shortcut::ShortcutState;
+                    if event.state != ShortcutState::Pressed {
+                        return;
+                    }
+                    // Match on key code to distinguish the two shortcuts
+                    use tauri_plugin_global_shortcut::Code;
+                    match shortcut.key {
+                        Code::KeyT => toggle_main_window(app),
+                        Code::KeyN => open_quick_add(app),
+                        _ => {}
+                    }
+                })
+                .build(),
+        )
         .setup(|app| {
             // On macOS, run as a tray/menu-bar-only app — no Dock icon.
             // The sidebar is accessed via the tray icon or global shortcuts.
@@ -560,28 +583,14 @@ fn main() {
             // Set up system tray
             setup_tray(app)?;
 
-            // Register global shortcuts
-            use tauri_plugin_global_shortcut::{GlobalShortcutExt, ShortcutState};
-            let handle1 = app.handle().clone();
-            let handle2 = app.handle().clone();
-
-            app.handle().global_shortcut().on_shortcut(
-                "CommandOrControl+Shift+T",
-                move |_app, _shortcut, event| {
-                    if event.state == ShortcutState::Pressed {
-                        toggle_main_window(&handle1);
-                    }
-                },
-            )?;
-
-            app.handle().global_shortcut().on_shortcut(
-                "CommandOrControl+Shift+N",
-                move |_app, _shortcut, event| {
-                    if event.state == ShortcutState::Pressed {
-                        open_quick_add(&handle2);
-                    }
-                },
-            )?;
+            // Register global shortcuts (handler is configured on the plugin above)
+            use tauri_plugin_global_shortcut::GlobalShortcutExt;
+            app.handle()
+                .global_shortcut()
+                .register("CommandOrControl+Shift+T")?;
+            app.handle()
+                .global_shortcut()
+                .register("CommandOrControl+Shift+N")?;
 
             // Restore window position from last session
             restore_window_state(app.handle());
