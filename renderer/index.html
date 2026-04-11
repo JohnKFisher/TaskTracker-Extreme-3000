@@ -115,8 +115,10 @@
 
     <!-- API Key Setup (shown when no key configured) -->
     <div id="api-key-setup" style="display: none;">
-      <p>Enter your Desk365 API key to connect.</p>
-      <p class="hint">Find it at Settings &gt; Integrations &gt; API in Desk365.</p>
+      <p>Connect to your Desk365 account.</p>
+      <p class="hint">Domain: e.g. <em>yourcompany.desk365.io</em></p>
+      <input type="text" id="domain-input" placeholder="yourcompany.desk365.io" />
+      <p class="hint" style="margin-top:8px;">API key: find it at Settings &gt; Integrations &gt; API in Desk365.</p>
       <input type="password" id="api-key-input" placeholder="Paste API key..." />
       <button id="btn-save-api-key">Connect</button>
     </div>

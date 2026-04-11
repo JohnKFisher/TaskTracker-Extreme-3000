@@ -24,6 +24,7 @@ async function initTickets() {
 
   if (config && config.desk365Domain) {
     DESK365_BASE = `https://${config.desk365Domain}/app/tickets/ticketdetails?tktNum=`;
+    document.getElementById('domain-input').value = config.desk365Domain;
   }
 
   if (config && config.apiKey) {
@@ -37,12 +38,14 @@ async function initTickets() {
   }
 }
 
-// Save API key
+// Save API key + domain
 document.getElementById('btn-save-api-key').addEventListener('click', async () => {
-  const key = document.getElementById('api-key-input').value.trim();
-  if (!key) return;
+  const key    = document.getElementById('api-key-input').value.trim();
+  const domain = document.getElementById('domain-input').value.trim().replace(/^https?:\/\//, '');
+  if (!key || !domain) return;
 
-  config = { apiKey: key };
+  config = { apiKey: key, desk365Domain: domain };
+  DESK365_BASE = `https://${domain}/app/tickets/ticketdetails?tktNum=`;
   await invoke('save_file', { filename: 'config.json', data: config });
   apiKeySetup.style.display = 'none';
   fetchAndRenderTickets();

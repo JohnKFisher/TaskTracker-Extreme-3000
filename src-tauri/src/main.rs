@@ -546,6 +546,11 @@ fn main() {
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_global_shortcut::init())
         .setup(|app| {
+            // On macOS, run as a tray/menu-bar-only app — no Dock icon.
+            // The sidebar is accessed via the tray icon or global shortcuts.
+            #[cfg(target_os = "macos")]
+            app.set_activation_policy(tauri::ActivationPolicy::Accessory);
+
             // Load local (machine-specific) settings
             let settings = read_local_settings(app.handle());
             app.manage(AppState {
