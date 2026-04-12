@@ -20,7 +20,8 @@ Working personal-use Tauri desktop app with a local/shared JSON data model, secu
 - Visible warning state when a configured sync folder is unavailable
 - Settings tab with storage status plus an About section showing version/build and the public GitHub repo
 - Checked-in version/build workflow through `version.json` and helper scripts
-- GitHub Actions packaging workflow with a read-only version check before build
+- GitHub Actions push-build workflow that produces a portable Windows EXE and a universal macOS DMG
+- Tagged GitHub Release workflow that publishes the same Windows and macOS assets as release downloads
 
 ## What Is Partial
 - Rust-side verification is only partially validated in this session because the local environment available to Codex does not currently expose `cargo`
@@ -41,6 +42,7 @@ Working personal-use Tauri desktop app with a local/shared JSON data model, secu
 - Rust toolchain for local Rust builds and tests
 - macOS or Windows desktop environment supported by Tauri
 - Optional Desk365 credentials for the tickets tab
+- GitHub Actions for automated CI packaging and tagged release publishing
 
 ## Important Operational Risks
 - Any future schema changes to the shared JSON files still need careful migration handling
@@ -48,9 +50,9 @@ Working personal-use Tauri desktop app with a local/shared JSON data model, secu
 - Credential-store behavior can differ by platform, so secure storage changes should continue to be tested on both Windows and macOS
 
 ## Recommended Next Priorities
-1. Run the new Rust unit tests and a full Tauri build in an environment where `cargo` is available.
-2. Add a small integration test layer around shared-storage degraded states and Desk365 connection setup.
-3. Record a durable known-good rollback anchor after the aligned build is verified on target machines.
+1. Push to `main` and confirm the new GitHub Actions artifacts include the portable Windows EXE and universal macOS DMG.
+2. Push a `v*` tag and confirm the tagged workflow publishes both assets cleanly to a GitHub Release.
+3. Run the Rust unit tests and a full local Tauri build in an environment where `cargo` is available.
 
 ## Most Recent Durable Known-Good Anchor
 None recorded yet.

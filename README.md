@@ -70,15 +70,26 @@ Release builds are expected to run from already-synced, committed version metada
 
 ## Getting Builds
 
-GitHub Actions builds installers automatically on every push to `main`.
+GitHub Actions now builds the app automatically in two ways:
 
-Download from: **GitHub → Actions → (latest run) → Artifacts**
+- Every push to `main` creates downloadable workflow artifacts under **GitHub → Actions → (latest run) → Artifacts**
+- Every pushed Git tag matching `v*` creates or updates a GitHub Release with the packaged assets attached
+
+Push-build artifacts:
 
 | Artifact | Platform |
 |---|---|
-| `tasktracker-extreme-3000-windows-x64` | Windows installer |
-| `tasktracker-extreme-3000-macos-apple-silicon` | macOS Apple Silicon DMG |
-| `tasktracker-extreme-3000-macos-intel` | macOS Intel DMG |
+| `tasktracker-extreme-3000-windows-portable-exe` | Windows portable EXE |
+| `tasktracker-extreme-3000-macos-universal-dmg` | macOS universal DMG |
+
+Release flow:
+
+```bash
+git tag v2.0.0
+git push origin v2.0.0
+```
+
+That tag should match the marketing version in `version.json`.
 
 > **First-run warning:** Builds are unsigned. On macOS: right-click the app → Open → Open anyway. On Windows: SmartScreen → "More info" → "Run anyway". One-time prompt.
 

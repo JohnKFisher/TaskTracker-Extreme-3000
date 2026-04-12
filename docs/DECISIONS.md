@@ -22,7 +22,7 @@ Status: approved
 
 ## 2026-04-11 — Build and distribute through GitHub Actions artifacts
 Rationale: The repo already uses a multi-platform GitHub Actions workflow that builds Windows and macOS artifacts on pushes to `main` and manual dispatch. That matches the project’s documented distribution path and avoids making local Rust toolchains a release prerequisite.
-Status: approved
+Status: superseded
 
 ## 2026-04-11 — Windows is the primary UX tie-breaker
 Rationale: The project still targets both Windows and macOS, but platform-specific UX decisions now resolve in favor of Windows conventions unless there is an explicit exception. This keeps the cross-platform behavior predictable and matches the current product direction.
@@ -38,4 +38,12 @@ Status: approved
 
 ## 2026-04-11 — Do not silently fall back when a configured sync folder is unavailable
 Rationale: If the chosen shared-data folder disappears, the app now reports that condition and pauses shared-data access instead of writing divergent local copies. This protects data integrity and makes degraded states visible.
+Status: approved
+
+## 2026-04-11 — Prefer a portable Windows EXE and a universal macOS DMG in CI
+Rationale: For this personal-use app, a portable Windows build is more useful than an installer, while macOS distribution is cleaner as a single universal DMG than as split architecture artifacts. This keeps the default downloads simple and platform-appropriate without adding installer complexity.
+Status: approved
+
+## 2026-04-11 — Separate push-build artifacts from tagged GitHub releases
+Rationale: Building on every push to `main` keeps fast feedback and downloadable artifacts available, while publishing GitHub Releases only from version tags avoids cluttering Releases with every commit. This creates a cleaner release path without losing automatic CI builds.
 Status: approved

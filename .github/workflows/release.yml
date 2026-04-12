@@ -1,15 +1,15 @@
-name: Build
+name: Release
 
 on:
   push:
-    branches: [main]
-  workflow_dispatch:
+    tags:
+      - "v*"
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
-  build:
+  release:
     strategy:
       fail-fast: false
       matrix:
@@ -18,15 +18,13 @@ jobs:
             platform: windows-latest
             rust_targets: x86_64-pc-windows-msvc
             tauri_args: --target x86_64-pc-windows-msvc --no-bundle
-            artifact_name: tasktracker-extreme-3000-windows-portable-exe
-            artifact_path: src-tauri/target/x86_64-pc-windows-msvc/release/tasktracker-extreme-3000.exe
+            upload_plain_binary: true
 
           - job_name: macos-universal
             platform: macos-14
             rust_targets: aarch64-apple-darwin,x86_64-apple-darwin
             tauri_args: --target universal-apple-darwin --bundles dmg
-            artifact_name: tasktracker-extreme-3000-macos-universal-dmg
-            artifact_path: src-tauri/target/universal-apple-darwin/release/bundle/dmg/*.dmg
+            upload_plain_binary: false
 
     name: ${{ matrix.job_name }}
     runs-on: ${{ matrix.platform }}
@@ -56,15 +54,21 @@ jobs:
       - name: Verify checked-in version metadata
         run: node scripts/version-sync.js --check
 
-      - name: Build Tauri app
+      - name: Build and upload release assets
         uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
-          args: ${{ matrix.tauri_args }}
+          tagName: ${{ github.ref_name }}
+          releaseName: TaskTracker Extreme 3000 ${{ github.ref_name }}
+          releaseBody: |
+            Automated build from GitHub Actions.
 
-      - name: Upload build artifacts
-        uses: actions/upload-artifact@v4
-        with:
-          name: ${{ matrix.artifact_name }}
-          path: ${{ matrix.artifact_path }}
-          if-no-files-found: error
-          retention-days: 30
+            Assets:
+            - Windows portable EXE
+            - macOS universal DMG
+          releaseDraft: false
+          prerelease: false
+          args: ${{ matrix.tauri_args }}
+          uploadPlainBinary: ${{ matrix.upload_plain_binary }}
+          releaseAssetNamePattern: "[name]-[version]-[platform]-[arch][ext]"
