@@ -650,12 +650,11 @@ fn open_quick_add(app: &AppHandle) {
     .decorations(false)
     .always_on_top(true)
     .skip_taskbar(true)
-    .transparent(false)
     .build();
 
     if let Ok(window) = quick_add {
         let app_handle = app.clone();
-        window.on_window_event(move |event| {
+        window.on_window_event(move |event: &tauri::WindowEvent| {
             if let tauri::WindowEvent::Focused(false) = event {
                 if let Some(quick_add_window) = app_handle.get_webview_window("quick-add") {
                     let _ = quick_add_window.close();
@@ -944,34 +943,37 @@ fn open_external_url(url: String, app: AppHandle) -> CommandResponse<()> {
 }
 
 #[tauri::command]
-async fn fetch_tickets(state: State<AppState>, app: AppHandle) -> CommandResponse<Value> {
+async fn fetch_tickets(
+    state: State<'_, AppState>,
+    app: AppHandle,
+) -> Result<CommandResponse<Value>, String> {
     let settings = state.local_settings.lock().unwrap().clone();
     let ticket_settings = match read_ticket_settings_document(&settings, &app) {
         Ok(document) => document,
-        Err(err) => return CommandResponse::err(&err.code, err.message),
+        Err(err) => return Ok(CommandResponse::err(&err.code, err.message)),
     };
 
     let Some(desk365_domain) = ticket_settings.desk365_domain else {
-        return CommandResponse::err(
+        return Ok(CommandResponse::err(
             "missing_domain",
             "Desk365 is not configured yet. Add your Desk365 hostname and API key first.",
-        );
+        ));
     };
 
     let api_key = match KeyringCredentialStore.get_api_key() {
         Ok(Some(value)) => value,
         Ok(None) => {
-            return CommandResponse::err(
+            return Ok(CommandResponse::err(
                 "missing_api_key",
                 "Desk365 is not fully configured yet. Add your saved API key first.",
-            )
+            ))
         }
-        Err(err) => return CommandResponse::err(&err.code, err.message),
+        Err(err) => return Ok(CommandResponse::err(&err.code, err.message)),
     };
 
     let client = match reqwest::Client::builder().use_rustls_tls().build() {
         Ok(client) => client,
-        Err(err) => return CommandResponse::err("network_error", err.to_string()),
+        Err(err) => return Ok(CommandResponse::err("network_error", err.to_string())),
     };
 
     let base_url = format!("https://{desk365_domain}/apis/v3/tickets");
@@ -988,25 +990,25 @@ async fn fetch_tickets(state: State<AppState>, app: AppHandle) -> CommandRespons
             .header("Authorization", &api_key)
             .header("Accept", "application/json")
             .send()
-            .await
+        .await
         {
             Ok(response) => response,
-            Err(err) => return CommandResponse::err("network_error", err.to_string()),
+            Err(err) => return Ok(CommandResponse::err("network_error", err.to_string())),
         };
 
         if !response.status().is_success() {
             let status = response.status().as_u16();
             let body = response.text().await.unwrap_or_default();
             let snippet = &body[..body.len().min(200)];
-            return CommandResponse::err(
+            return Ok(CommandResponse::err(
                 "desk365_error",
                 format!("Desk365 API error: {status} — {snippet}"),
-            );
+            ));
         }
 
         let result: Value = match response.json().await {
             Ok(value) => value,
-            Err(err) => return CommandResponse::err("network_error", err.to_string()),
+            Err(err) => return Ok(CommandResponse::err("network_error", err.to_string())),
         };
 
         let tickets = result
@@ -1054,10 +1056,10 @@ async fn fetch_tickets(state: State<AppState>, app: AppHandle) -> CommandRespons
         })
         .collect();
 
-    CommandResponse::ok(json!({
+    Ok(CommandResponse::ok(json!({
         "tickets": normalized,
         "total": all_tickets.len(),
-    }))
+    })))
 }
 
 #[tauri::command]

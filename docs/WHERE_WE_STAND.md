@@ -5,11 +5,11 @@ TaskTracker Extreme 3000
 
 ## Current Version / Build
 - Version source of truth: `version.json`
-- Current marketing version: `2.0.0`
-- Current build number: `4`
+- Current marketing version: `2.1.0`
+- Current build number: `5`
 
 ## Overall Status
-Working personal-use Tauri desktop app with a local/shared JSON data model, secure Desk365 credential storage, explicit shared-storage status reporting, and a checked-in deterministic version/build workflow. The app is now aligned more closely with the project rules in `AGENTS.md`, especially around secrets, versioning, and visible degraded states.
+Working personal-use Tauri desktop app with a local/shared JSON data model, secure Desk365 credential storage, explicit shared-storage status reporting, and a checked-in deterministic version/build workflow. The repo is now at version `2.1.0` / build `5`, with refreshed lockfiles, passing local version-script checks, and passing Rust unit tests before the first tagged GitHub release.
 
 ## What Works Now
 - Sidebar desktop window with tray behavior, global shortcuts, and a quick-add window
@@ -24,7 +24,7 @@ Working personal-use Tauri desktop app with a local/shared JSON data model, secu
 - Tagged GitHub Release workflow that publishes the same Windows and macOS assets as release downloads
 
 ## What Is Partial
-- Rust-side verification is only partially validated in this session because the local environment available to Codex does not currently expose `cargo`
+- The new GitHub Actions build and release workflows are configured and syntax-checked locally, but their first remote runs still need to complete on GitHub
 - Capability narrowing was improved at the desktop capability file level, but the app still relies on core Tauri window/event/webview access rather than a deeply custom per-command permission model
 
 ## What Is Not Implemented Yet
@@ -50,9 +50,9 @@ Working personal-use Tauri desktop app with a local/shared JSON data model, secu
 - Credential-store behavior can differ by platform, so secure storage changes should continue to be tested on both Windows and macOS
 
 ## Recommended Next Priorities
-1. Push to `main` and confirm the new GitHub Actions artifacts include the portable Windows EXE and universal macOS DMG.
-2. Push a `v*` tag and confirm the tagged workflow publishes both assets cleanly to a GitHub Release.
-3. Run the Rust unit tests and a full local Tauri build in an environment where `cargo` is available.
+1. Confirm the `main` push build produces the portable Windows EXE and universal macOS DMG artifacts on GitHub.
+2. Confirm the `v2.1.0` tagged workflow publishes both assets cleanly to a GitHub Release.
+3. Record a durable known-good anchor after the GitHub build artifacts are downloaded and smoke-tested on target machines.
 
 ## Most Recent Durable Known-Good Anchor
 None recorded yet.
