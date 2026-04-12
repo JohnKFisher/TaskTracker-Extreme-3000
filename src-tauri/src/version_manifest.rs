@@ -58,7 +58,11 @@ mod tests {
 
     #[test]
     fn rejects_invalid_values() {
-        assert!(parse_version_manifest_str(r#"{"marketingVersion":"2.0","buildNumber":4}"#).is_err());
-        assert!(parse_version_manifest_str(r#"{"marketingVersion":"2.0.0","buildNumber":0}"#).is_err());
+        assert!(
+            parse_version_manifest_str(r#"{"marketingVersion":"2.0","buildNumber":4}"#).is_err()
+        );
+        assert!(
+            parse_version_manifest_str(r#"{"marketingVersion":"2.0.0","buildNumber":0}"#).is_err()
+        );
     }
 }

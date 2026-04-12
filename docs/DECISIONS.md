@@ -51,3 +51,7 @@ Status: approved
 ## 2026-04-12 — Ad-hoc sign macOS CI builds when Apple signing credentials are not configured
 Rationale: A macOS `.app` downloaded from the internet is more reliable on Apple Silicon when it is at least ad-hoc signed, even if full Developer ID signing and notarization are not available yet. This improves the default build quality while still being honest that Gatekeeper exceptions may remain necessary.
 Status: approved
+
+## 2026-04-12 — On macOS, closing the main window saves and quits instead of hiding to tray
+Rationale: The app runs as an accessory on macOS, so hiding the only window makes recovery awkward without a dock icon. Keeping the tray-first hide behavior on Windows preserves the primary-platform workflow while making macOS close semantics practical.
+Status: approved

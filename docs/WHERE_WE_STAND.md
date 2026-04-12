@@ -13,6 +13,7 @@ Working personal-use Tauri desktop app with a local/shared JSON data model, secu
 
 ## What Works Now
 - Sidebar desktop window with tray behavior, global shortcuts, and a quick-add window
+- On macOS, closing the main window now saves pending task/note edits and quits instead of hiding the accessory app window
 - Kanban task board with drag/drop, inline notes, delete confirmation, and count-aware clear-done confirmation
 - Notes tab with persisted plain-JSON storage
 - Desk365 ticket integration using a stored hostname plus secure OS credential storage for the API key

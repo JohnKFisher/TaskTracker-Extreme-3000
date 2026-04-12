@@ -11,7 +11,7 @@ async function loadNotes() {
   }
 }
 
-const saveNotes = window.debounce(async () => {
+async function persistNotes() {
   if (!notesWritable) return;
 
   try {
@@ -27,9 +27,12 @@ const saveNotes = window.debounce(async () => {
     await window.refreshStorageStatus();
     await loadNotes();
   }
-}, 350);
+}
+
+const saveNotes = window.debounce(persistNotes, 350);
 
 notesArea.addEventListener('input', saveNotes);
+window.registerSaveHook(persistNotes);
 
 window.addEventListener('storage-status-changed', (event) => {
   const status = event.detail;

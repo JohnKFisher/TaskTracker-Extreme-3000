@@ -220,12 +220,10 @@ impl CredentialStore for KeyringCredentialStore {
     }
 
     fn set_api_key(&self, api_key: &str) -> Result<(), AppError> {
-        self.entry()?
-            .set_password(api_key)
-            .map_err(|err| AppError {
-                code: "credential_store_unavailable".to_string(),
-                message: format!("Could not save the Desk365 API key securely: {err}"),
-            })
+        self.entry()?.set_password(api_key).map_err(|err| AppError {
+            code: "credential_store_unavailable".to_string(),
+            message: format!("Could not save the Desk365 API key securely: {err}"),
+        })
     }
 
     fn clear_api_key(&self) -> Result<(), AppError> {
@@ -247,7 +245,10 @@ fn local_app_data_dir(app: &AppHandle) -> Result<PathBuf, AppError> {
 
     fs::create_dir_all(&dir).map_err(|err| AppError {
         code: "app_data_unavailable".to_string(),
-        message: format!("Could not create the app data directory at {}: {err}", dir.display()),
+        message: format!(
+            "Could not create the app data directory at {}: {err}",
+            dir.display()
+        ),
     })?;
 
     Ok(dir)
@@ -398,12 +399,11 @@ fn migrate_legacy_secret_value<S: CredentialStore>(
     };
 
     store.set_api_key(api_key)?;
-    let mut normalized = serde_json::to_value(normalize_ticket_settings_value(value)).map_err(|err| {
-        AppError {
+    let mut normalized =
+        serde_json::to_value(normalize_ticket_settings_value(value)).map_err(|err| AppError {
             code: "invalid_data".to_string(),
             message: format!("Could not normalize legacy Desk365 settings: {err}"),
-        }
-    })?;
+        })?;
 
     if let Some(domain) = value.get("desk365Domain").and_then(Value::as_str) {
         normalized["desk365Domain"] = json!(domain);
@@ -461,7 +461,10 @@ fn save_ticket_settings_document(
     write_json_file(&path, document)
 }
 
-fn read_tasks_document(settings: &LocalSettings, app: &AppHandle) -> Result<TaskDocument, AppError> {
+fn read_tasks_document(
+    settings: &LocalSettings,
+    app: &AppHandle,
+) -> Result<TaskDocument, AppError> {
     let path = shared_data_path(TASKS_FILE, settings, app)?;
     read_or_default(&path)
 }
@@ -475,7 +478,10 @@ fn save_tasks_document(
     write_json_file(&path, document)
 }
 
-fn read_notes_document(settings: &LocalSettings, app: &AppHandle) -> Result<NotesDocument, AppError> {
+fn read_notes_document(
+    settings: &LocalSettings,
+    app: &AppHandle,
+) -> Result<NotesDocument, AppError> {
     let path = shared_data_path(NOTES_FILE, settings, app)?;
     read_or_default(&path)
 }
@@ -579,17 +585,87 @@ fn save_window_state(window: &tauri::WebviewWindow) {
     }
 }
 
+fn monitor_contains_point(monitor: &tauri::Monitor, x: i32, y: i32) -> bool {
+    let position = monitor.position();
+    let size = monitor.size();
+    let right = position.x.saturating_add(size.width as i32);
+    let bottom = position.y.saturating_add(size.height as i32);
+    x >= position.x && x < right && y >= position.y && y < bottom
+}
+
+fn saved_window_state_is_visible(
+    window: &tauri::WebviewWindow,
+    x: i32,
+    y: i32,
+    width: u32,
+    height: u32,
+) -> bool {
+    let Ok(monitors) = window.available_monitors() else {
+        return true;
+    };
+    if monitors.is_empty() {
+        return true;
+    }
+
+    let center_x = x.saturating_add((width / 2) as i32);
+    let center_y = y.saturating_add((height / 2) as i32);
+    monitors
+        .iter()
+        .any(|monitor| monitor_contains_point(monitor, center_x, center_y))
+}
+
+fn place_main_window_on_sidebar_edge(window: &tauri::WebviewWindow) {
+    let monitor = window
+        .current_monitor()
+        .ok()
+        .flatten()
+        .or_else(|| window.primary_monitor().ok().flatten());
+    let Some(monitor) = monitor else {
+        return;
+    };
+    let Ok(size) = window.outer_size() else {
+        return;
+    };
+
+    let scale = monitor.scale_factor();
+    let edge_margin = (16.0 * scale).round() as i32;
+    let top_margin = (72.0 * scale).round() as i32;
+    let position = monitor.position();
+    let monitor_size = monitor.size();
+
+    let max_x = position
+        .x
+        .saturating_add(monitor_size.width as i32)
+        .saturating_sub(size.width as i32)
+        .saturating_sub(edge_margin);
+    let max_y = position
+        .y
+        .saturating_add(monitor_size.height as i32)
+        .saturating_sub(size.height as i32);
+
+    let x = max_x.max(position.x);
+    let y = position
+        .y
+        .saturating_add(top_margin)
+        .clamp(position.y, max_y.max(position.y));
+
+    let _ = window.set_position(tauri::PhysicalPosition::new(x, y));
+}
+
 fn restore_window_state(app: &AppHandle) {
+    let Some(window) = app.get_webview_window("main") else {
+        return;
+    };
     let Ok(path) = window_state_path(app) else {
+        place_main_window_on_sidebar_edge(&window);
         return;
     };
     let Ok(Some(content)) = read_text_file(&path) else {
+        place_main_window_on_sidebar_edge(&window);
         return;
     };
     let Ok(state) = serde_json::from_str::<Value>(&content) else {
-        return;
-    };
-    let Some(window) = app.get_webview_window("main") else {
+        place_main_window_on_sidebar_edge(&window);
         return;
     };
 
@@ -599,9 +675,18 @@ fn restore_window_state(app: &AppHandle) {
         state.get("width").and_then(Value::as_u64),
         state.get("height").and_then(Value::as_u64),
     ) {
-        let _ = window.set_position(tauri::PhysicalPosition::new(x as i32, y as i32));
-        let _ = window.set_size(tauri::PhysicalSize::new(w as u32, h as u32));
+        let x = x as i32;
+        let y = y as i32;
+        let width = w as u32;
+        let height = h as u32;
+        if saved_window_state_is_visible(&window, x, y, width, height) {
+            let _ = window.set_size(tauri::PhysicalSize::new(width, height));
+            let _ = window.set_position(tauri::PhysicalPosition::new(x, y));
+            return;
+        }
     }
+
+    place_main_window_on_sidebar_edge(&window);
 }
 
 fn toggle_main_window(app: &AppHandle) {
@@ -619,7 +704,10 @@ fn focus_about_section(app: &AppHandle) {
     if let Some(window) = app.get_webview_window("main") {
         let _ = window.show();
         let _ = window.set_focus();
-        let _ = window.emit("navigate-to-tab", json!({ "tab": "settings", "section": "about" }));
+        let _ = window.emit(
+            "navigate-to-tab",
+            json!({ "tab": "settings", "section": "about" }),
+        );
     }
 }
 
@@ -796,7 +884,10 @@ fn save_hidden_tickets(
 }
 
 #[tauri::command]
-fn load_ticket_settings(state: State<AppState>, app: AppHandle) -> CommandResponse<TicketSettingsState> {
+fn load_ticket_settings(
+    state: State<AppState>,
+    app: AppHandle,
+) -> CommandResponse<TicketSettingsState> {
     let settings = state.local_settings.lock().unwrap().clone();
     let auth_error = state.ticket_auth_error.lock().unwrap().clone();
     match ticket_state(&settings, &app, auth_error, &KeyringCredentialStore) {
@@ -922,6 +1013,15 @@ fn hide_window(window: tauri::WebviewWindow) -> CommandResponse<()> {
 }
 
 #[tauri::command]
+fn quit_app(app: AppHandle) -> CommandResponse<()> {
+    if let Some(window) = app.get_webview_window("main") {
+        save_window_state(&window);
+    }
+    app.exit(0);
+    CommandResponse::ok(())
+}
+
+#[tauri::command]
 fn toggle_always_on_top(window: tauri::WebviewWindow) -> CommandResponse<bool> {
     let current = window.is_always_on_top().unwrap_or(true);
     match window.set_always_on_top(!current) {
@@ -981,16 +1081,14 @@ async fn fetch_tickets(
     let mut offset = 0usize;
 
     loop {
-        let url = format!(
-            "{base_url}?offset={offset}&order_by=updated_time&order_type=descending"
-        );
+        let url = format!("{base_url}?offset={offset}&order_by=updated_time&order_type=descending");
 
         let response = match client
             .get(&url)
             .header("Authorization", &api_key)
             .header("Accept", "application/json")
             .send()
-        .await
+            .await
         {
             Ok(response) => response,
             Err(err) => return Ok(CommandResponse::err("network_error", err.to_string())),
@@ -1066,7 +1164,13 @@ async fn fetch_tickets(
 fn show_notification(title: String, body: String, app: AppHandle) -> CommandResponse<()> {
     use tauri_plugin_notification::NotificationExt;
 
-    match app.notification().builder().title(&title).body(&body).show() {
+    match app
+        .notification()
+        .builder()
+        .title(&title)
+        .body(&body)
+        .show()
+    {
         Ok(_) => CommandResponse::ok(()),
         Err(err) => CommandResponse::err("notification_error", err.to_string()),
     }
@@ -1140,9 +1244,12 @@ async fn pick_sync_folder(app: AppHandle) -> CommandResponse<Option<String>> {
     use tauri_plugin_dialog::DialogExt;
 
     let (tx, rx) = tokio::sync::oneshot::channel();
-    app.dialog().file().set_title("Select Sync Folder").pick_folder(move |folder| {
-        let _ = tx.send(folder);
-    });
+    app.dialog()
+        .file()
+        .set_title("Select Sync Folder")
+        .pick_folder(move |folder| {
+            let _ = tx.send(folder);
+        });
 
     match rx.await {
         Ok(Some(folder)) => CommandResponse::ok(Some(folder.to_string())),
@@ -1184,8 +1291,11 @@ fn main() {
             app.set_activation_policy(tauri::ActivationPolicy::Accessory);
 
             let local_settings = read_local_settings(app.handle()).unwrap_or_default();
-            let migration_result =
-                migrate_legacy_ticket_secret_if_needed(&local_settings, app.handle(), &credential_store);
+            let migration_result = migrate_legacy_ticket_secret_if_needed(
+                &local_settings,
+                app.handle(),
+                &credential_store,
+            );
             let ticket_auth_error = match migration_result {
                 Ok(_) => None,
                 Err(err) if err.code == "sync_unavailable" => None,
@@ -1214,7 +1324,21 @@ fn main() {
             tauri::WindowEvent::CloseRequested { api, .. } => {
                 if window.label() == "main" {
                     api.prevent_close();
-                    let _ = window.hide();
+                    #[cfg(target_os = "macos")]
+                    {
+                        if window.emit("app-close-requested", ()).is_err() {
+                            if let Some(main_window) =
+                                window.app_handle().get_webview_window("main")
+                            {
+                                save_window_state(&main_window);
+                            }
+                            window.app_handle().exit(0);
+                        }
+                    }
+                    #[cfg(not(target_os = "macos"))]
+                    {
+                        let _ = window.hide();
+                    }
                 }
             }
             tauri::WindowEvent::Moved(_) | tauri::WindowEvent::Resized(_) => {
@@ -1243,6 +1367,7 @@ fn main() {
             get_app_metadata,
             window_minimize,
             hide_window,
+            quit_app,
             toggle_always_on_top,
             open_external_url,
             fetch_tickets,
@@ -1345,7 +1470,10 @@ mod tests {
 
         assert_eq!(status.mode, "syncUnavailable");
         assert!(!status.shared_data_available);
-        assert!(status.message.unwrap().contains("Local settings and window position still work"));
+        assert!(status
+            .message
+            .unwrap()
+            .contains("Local settings and window position still work"));
     }
 
     #[test]

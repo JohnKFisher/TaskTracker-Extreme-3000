@@ -1,5 +1,9 @@
 const invoke = window.__TAURI__.core.invoke;
 const listen = window.__TAURI__.event.listen;
+const isMacPlatform = /\bMac\b/.test(navigator.userAgent);
+const beforeQuitHooks = [];
+const saveHooks = [];
+let quitInProgress = false;
 
 window.currentStorageStatus = null;
 window.appMetadata = null;
@@ -23,6 +27,21 @@ async function callCommand(command, args = {}) {
 }
 
 window.callCommand = callCommand;
+window.registerBeforeQuitHook = function registerBeforeQuitHook(fn) {
+  beforeQuitHooks.push(fn);
+};
+
+window.registerSaveHook = function registerSaveHook(fn) {
+  saveHooks.push(fn);
+};
+
+window.flushPendingAppState = async function flushPendingAppState() {
+  for (const hook of beforeQuitHooks) {
+    await hook();
+  }
+
+  await Promise.all(saveHooks.map((hook) => hook()));
+};
 
 function updateTabCount(tabName, count) {
   const el = document.getElementById(`tab-count-${tabName}`);
@@ -98,6 +117,19 @@ window.openExternal = async function openExternal(url) {
   return callCommand('open_external_url', { url });
 };
 
+async function saveAndQuit() {
+  if (quitInProgress) return;
+  quitInProgress = true;
+
+  try {
+    await window.flushPendingAppState();
+    await callCommand('quit_app');
+  } catch (error) {
+    quitInProgress = false;
+    throw error;
+  }
+}
+
 document.querySelectorAll('.tab').forEach((tab) => {
   tab.addEventListener('click', () => setActiveTab(tab.dataset.tab));
 });
@@ -106,7 +138,21 @@ document.getElementById('btn-minimize').addEventListener('click', async () => {
   await callCommand('window_minimize');
 });
 
-document.getElementById('btn-close').addEventListener('click', async () => {
+const closeBtn = document.getElementById('btn-close');
+if (isMacPlatform) {
+  closeBtn.title = 'Save and quit';
+  closeBtn.setAttribute('aria-label', 'Save and quit');
+} else {
+  closeBtn.title = 'Hide to tray';
+  closeBtn.setAttribute('aria-label', 'Hide to tray');
+}
+
+closeBtn.addEventListener('click', async () => {
+  if (isMacPlatform) {
+    await saveAndQuit();
+    return;
+  }
+
   await callCommand('hide_window');
 });
 
@@ -154,6 +200,14 @@ listen('tasks-updated', () => {
 listen('navigate-to-tab', (event) => {
   const payload = event.payload || {};
   setActiveTab(payload.tab || 'settings', payload.section);
+});
+
+listen('app-close-requested', async () => {
+  try {
+    await saveAndQuit();
+  } catch (error) {
+    console.error('Failed to save and quit:', error);
+  }
 });
 
 Promise.all([window.refreshStorageStatus(), window.refreshAppMetadata()]).catch((error) => {

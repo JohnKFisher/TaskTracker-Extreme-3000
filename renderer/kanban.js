@@ -43,7 +43,7 @@ async function loadTasks() {
   updateTaskControls();
 }
 
-const saveTasks = window.debounce(async () => {
+async function persistTasks() {
   if (!isTaskStorageWritable()) return;
 
   try {
@@ -53,7 +53,9 @@ const saveTasks = window.debounce(async () => {
     await window.refreshStorageStatus();
     await loadTasks();
   }
-}, 350);
+}
+
+const saveTasks = window.debounce(persistTasks, 350);
 
 function renderAllColumns() {
   COLUMNS.forEach((column) => renderColumn(column));
@@ -310,5 +312,13 @@ window.addEventListener('storage-status-changed', (event) => {
   updateTaskControls();
   renderAllColumns();
 });
+
+window.registerBeforeQuitHook(() => {
+  document.querySelectorAll('.task-card.expanded').forEach((card) => {
+    const task = tasks.find((entry) => entry.id === card.dataset.id);
+    collapseCard(card, task);
+  });
+});
+window.registerSaveHook(persistTasks);
 
 loadTasks();

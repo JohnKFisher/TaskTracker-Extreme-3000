@@ -18,7 +18,7 @@ Windows is the primary UX tie-breaker for the project. macOS remains a supported
 - Quick-add overlay (`Ctrl/Cmd+Shift+N`) to capture a task without switching windows
 - Desk365 ticket integration with secure API-key storage and periodic refresh
 - Persistent notes tab for scratch text
-- System tray behavior instead of closing the app window
+- Windows tray behavior, while macOS window close saves and quits the app
 - Settings tab with sync-folder controls, storage status, and About info
 
 ## Data, Privacy, And Storage
