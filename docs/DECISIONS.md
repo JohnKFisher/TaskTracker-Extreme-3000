@@ -55,3 +55,7 @@ Status: approved
 ## 2026-04-12 — On macOS, closing the main window saves and quits instead of hiding to tray
 Rationale: The app runs as an accessory on macOS, so hiding the only window makes recovery awkward without a dock icon. Keeping the tray-first hide behavior on Windows preserves the primary-platform workflow while making macOS close semantics practical.
 Status: approved
+
+## 2026-04-12 — Treat version bumps on main as release-publish triggers
+Rationale: For this repo, increasing the checked-in app version means the work is intentionally ready to publish for now. Releasing directly from `main` when `version.json` changes matches that workflow better than requiring a separate manual tag push.
+Status: approved

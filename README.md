@@ -73,7 +73,7 @@ Release builds are expected to run from already-synced, committed version metada
 GitHub Actions now builds the app automatically in two ways:
 
 - Every push to `main` creates downloadable workflow artifacts under **GitHub → Actions → (latest run) → Artifacts**
-- Every pushed Git tag matching `v*` creates or updates a GitHub Release with the packaged assets attached
+- Every push to `main` that changes `version.json` creates or updates a GitHub Release for that checked-in app version
 
 Push-build artifacts:
 
@@ -85,11 +85,11 @@ Push-build artifacts:
 Release flow:
 
 ```bash
-git tag v2.1.3
-git push origin v2.1.3
+npm run version:bump
+git push origin main
 ```
 
-That tag should match the marketing version in `version.json`.
+That push should publish a GitHub Release tagged to match the checked-in `marketingVersion` in `version.json`.
 
 > **First-run warning:** macOS CI builds are ad-hoc signed, which improves compatibility but does **not** replace Apple notarization. You may still need `System Settings -> Privacy & Security -> Open Anyway`. Windows builds are unsigned, so SmartScreen may still require `More info -> Run anyway`.
 

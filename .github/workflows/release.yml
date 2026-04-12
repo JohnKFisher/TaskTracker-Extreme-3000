@@ -2,8 +2,10 @@ name: Release
 
 on:
   push:
-    tags:
-      - "v*"
+    branches: [main]
+    paths:
+      - version.json
+  workflow_dispatch:
 
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
@@ -36,6 +38,14 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v6
 
+      - name: Determine release version
+        id: version
+        shell: bash
+        run: |
+          marketing_version=$(node -p "require('./version.json').marketingVersion")
+          echo "marketing_version=$marketing_version" >> "$GITHUB_OUTPUT"
+          echo "release_tag=v$marketing_version" >> "$GITHUB_OUTPUT"
+
       - name: Set up Node.js
         uses: actions/setup-node@v6
         with:
@@ -62,10 +72,10 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
-          tagName: ${{ github.ref_name }}
-          releaseName: TaskTracker Extreme 3000 ${{ github.ref_name }}
+          tagName: ${{ steps.version.outputs.release_tag }}
+          releaseName: TaskTracker Extreme 3000 ${{ steps.version.outputs.release_tag }}
           releaseBody: |
-            Automated build from GitHub Actions.
+            Automated build from GitHub Actions after a version bump on `main`.
 
             Assets:
             - Windows portable EXE

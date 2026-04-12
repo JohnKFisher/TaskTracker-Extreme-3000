@@ -9,7 +9,7 @@ TaskTracker Extreme 3000
 - Current build number: `8`
 
 ## Overall Status
-Working personal-use Tauri desktop app with a local/shared JSON data model, secure Desk365 credential storage, explicit shared-storage status reporting, and a checked-in deterministic version/build workflow. The repo is now at version `2.1.3` / build `8`, with refreshed lockfiles, Node 24-compatible GitHub Actions workflow steps, ad-hoc macOS CI signing, and passing local version-script checks plus Rust unit tests ahead of the next tagged GitHub release.
+Working personal-use Tauri desktop app with a local/shared JSON data model, secure Desk365 credential storage, explicit shared-storage status reporting, and a checked-in deterministic version/build workflow. The repo is now at version `2.1.3` / build `8`, with refreshed lockfiles, Node 24-compatible GitHub Actions workflow steps, ad-hoc macOS CI signing, and passing local version-script checks plus Rust unit tests ahead of the next version-bump-triggered GitHub release.
 
 ## What Works Now
 - Sidebar desktop window with tray behavior, global shortcuts, and a quick-add window
@@ -22,7 +22,7 @@ Working personal-use Tauri desktop app with a local/shared JSON data model, secu
 - Settings tab with storage status plus an About section showing version/build and the public GitHub repo
 - Checked-in version/build workflow through `version.json` and helper scripts
 - GitHub Actions push-build workflow that produces a portable Windows EXE and a universal macOS DMG
-- Tagged GitHub Release workflow that publishes the same Windows and macOS assets as release downloads
+- GitHub Release workflow that publishes the same Windows and macOS assets whenever `version.json` changes on `main`
 - macOS CI builds now use ad-hoc signing to improve downloaded-app launch behavior on Apple Silicon
 
 ## What Is Partial
@@ -53,7 +53,7 @@ Working personal-use Tauri desktop app with a local/shared JSON data model, secu
 
 ## Recommended Next Priorities
 1. Confirm the `main` push build produces the portable Windows EXE and universal macOS DMG artifacts on GitHub.
-2. Confirm the `v2.1.3` tagged workflow publishes both assets cleanly to a GitHub Release.
+2. Confirm the next `version.json` bump on `main` publishes both assets cleanly to a GitHub Release.
 3. Record a durable known-good anchor after the GitHub build artifacts are downloaded and smoke-tested on target machines.
 
 ## Most Recent Durable Known-Good Anchor
