@@ -4,52 +4,53 @@
 TaskTracker Extreme 3000
 
 ## Current Version / Build
-- App version from source-controlled config: `2.0.0`
-- Current checked-in UI build stamp: `Built: March 30, 2026, #4`
-- Trust warning: the build counter is currently derived from `data/build-number.json`, which is gitignored, so the build number is not yet a deterministic source-controlled release value
+- Version source of truth: `version.json`
+- Current marketing version: `2.0.0`
+- Current build number: `4`
 
 ## Overall Status
-Working personal-use Tauri desktop app with a local task board, notes, optional sync folder support, and Desk365 ticket integration. The repo has working cross-platform packaging automation, but version/build tracking still needs cleanup to fully match the project rules in `AGENTS.md`.
+Working personal-use Tauri desktop app with a local/shared JSON data model, secure Desk365 credential storage, explicit shared-storage status reporting, and a checked-in deterministic version/build workflow. The app is now aligned more closely with the project rules in `AGENTS.md`, especially around secrets, versioning, and visible degraded states.
 
 ## What Works Now
-- Sidebar-style desktop window with custom title bar and tabs
-- Kanban task board with multiple columns, drag-and-drop ordering, inline task notes, and done clearing
-- Notes tab with persisted local text storage
-- Desk365 ticket loading, refresh, polling, hide/unhide state, and open-in-browser actions
-- Optional user-selected sync folder for shared task/note/config storage across machines
-- System tray integration and global shortcuts for showing the app and quick add
-- GitHub Actions workflow for Windows and macOS artifacts
+- Sidebar desktop window with tray behavior, global shortcuts, and a quick-add window
+- Kanban task board with drag/drop, inline notes, delete confirmation, and count-aware clear-done confirmation
+- Notes tab with persisted plain-JSON storage
+- Desk365 ticket integration using a stored hostname plus secure OS credential storage for the API key
+- Optional shared sync folder for tasks, notes, Desk365 settings, and hidden ticket state
+- Visible warning state when a configured sync folder is unavailable
+- Settings tab with storage status plus an About section showing version/build and the public GitHub repo
+- Checked-in version/build workflow through `version.json` and helper scripts
+- GitHub Actions packaging workflow with a read-only version check before build
 
 ## What Is Partial
-- Build numbering exists, but the current counter flow is not source-controlled or reproducible from a clean checkout
-- Cross-platform support is implemented, but the repo does not yet explicitly document which platform is primary for product and UX decisions
+- Rust-side verification is only partially validated in this session because the local environment available to Codex does not currently expose `cargo`
+- Capability narrowing was improved at the desktop capability file level, but the app still relies on core Tauri window/event/webview access rather than a deeply custom per-command permission model
 
 ## What Is Not Implemented Yet
-- A source-controlled deterministic build number system that satisfies the project versioning rules
 - A recorded durable known-good rollback anchor in project docs
-- Repo-local project memory docs were missing before this session and will need to be kept current from here forward
+- Broader automated app-level UI/integration tests beyond the version-script checks and Rust unit tests added in source
 
 ## Known Limitations And Trust Warnings
-- Desk365 integration depends on a valid Desk365 account, domain, and API key
+- Desk365 integration still depends on a valid Desk365 account, hostname, and API key
 - Builds are unsigned, so first-run OS trust prompts are expected on macOS and Windows
-- Task, notes, and config data are inspectable JSON files, which is good for recovery, but also means schema discipline matters if the data format changes later
-- The build stamp shown in the UI should not yet be treated as authoritative release metadata
+- If a configured sync folder goes offline, shared-data features stop until that folder is reachable again by design
+- The project is tested primarily on the owner’s own machines
 
 ## Setup / Runtime Requirements
 - Node.js and npm
-- Rust toolchain for local builds
-- Tauri-compatible desktop environment on macOS or Windows
+- Rust toolchain for local Rust builds and tests
+- macOS or Windows desktop environment supported by Tauri
 - Optional Desk365 credentials for the tickets tab
 
 ## Important Operational Risks
-- Build/version metadata currently does not fully meet the repo’s source-controlled determinism requirement
-- Sync-folder behavior is user-chosen and practical, but any future schema or write-path changes will need extra caution to avoid cross-machine data surprises
-- Desk365 availability, credentials, or API behavior can affect the tickets tab independently of the local task board
+- Any future schema changes to the shared JSON files still need careful migration handling
+- Sync-folder outages are now explicit, but they still interrupt shared-data workflows until resolved
+- Credential-store behavior can differ by platform, so secure storage changes should continue to be tested on both Windows and macOS
 
 ## Recommended Next Priorities
-1. Replace the current gitignored build-counter flow with a deterministic source-controlled version/build system.
-2. Decide and record the primary target platform for UX tie-breakers.
-3. Add a small set of verification steps or tests around the core local data flows and sync-folder path handling.
+1. Run the new Rust unit tests and a full Tauri build in an environment where `cargo` is available.
+2. Add a small integration test layer around shared-storage degraded states and Desk365 connection setup.
+3. Record a durable known-good rollback anchor after the aligned build is verified on target machines.
 
 ## Most Recent Durable Known-Good Anchor
 None recorded yet.

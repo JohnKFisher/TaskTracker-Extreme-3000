@@ -54,6 +54,9 @@ jobs:
       - name: Install npm dependencies
         run: npm install
 
+      - name: Verify checked-in version metadata
+        run: node scripts/version-sync.js --check
+
       # Build the Tauri app for the target platform.
       # Note: macOS builds are unsigned — opening on macOS for the
       # first time requires right-click > Open to bypass Gatekeeper.

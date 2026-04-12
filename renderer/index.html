@@ -7,32 +7,31 @@
   <link rel="stylesheet" href="styles.css">
 </head>
 <body>
-  <!-- Custom Title Bar -->
   <div id="title-bar">
     <div id="title-bar-drag">
       <span id="title-text">TaskTracker Extreme 3000</span>
     </div>
     <div id="title-bar-buttons">
-      <button id="btn-pin" class="title-btn" title="Toggle always-on-top">&#128204;</button>
-      <button id="btn-minimize" class="title-btn" title="Minimize">&#8211;</button>
-      <button id="btn-close" class="title-btn" title="Hide to tray">&#10005;</button>
+      <button id="btn-pin" class="title-btn" type="button" title="Toggle always-on-top" aria-label="Toggle always-on-top">📌</button>
+      <button id="btn-minimize" class="title-btn" type="button" title="Minimize" aria-label="Minimize">−</button>
+      <button id="btn-close" class="title-btn" type="button" title="Hide to tray" aria-label="Hide to tray">✕</button>
     </div>
   </div>
 
-  <!-- Tab Navigation -->
-  <div id="tab-bar">
-    <button class="tab active" data-tab="tasks">Tasks <span id="tab-count-tasks" class="tab-count"></span></button>
-    <button class="tab" data-tab="tickets">Tickets <span id="tab-count-tickets" class="tab-count"></span></button>
-    <button class="tab" data-tab="notes">Notes</button>
-    <button class="tab settings-tab" data-tab="settings" title="Settings">&#9881;</button>
+  <div id="tab-bar" role="tablist" aria-label="Main sections">
+    <button class="tab active" type="button" data-tab="tasks" role="tab" aria-selected="true">Tasks <span id="tab-count-tasks" class="tab-count"></span></button>
+    <button class="tab" type="button" data-tab="tickets" role="tab" aria-selected="false">Tickets <span id="tab-count-tickets" class="tab-count"></span></button>
+    <button class="tab" type="button" data-tab="notes" role="tab" aria-selected="false">Notes</button>
+    <button class="tab settings-tab" type="button" data-tab="settings" role="tab" aria-selected="false" title="Settings" aria-label="Settings">⚙</button>
   </div>
 
-  <!-- Tasks Tab (Kanban) -->
-  <div id="tab-tasks" class="tab-content active">
+  <div id="storage-banner" class="app-banner hidden" role="status" aria-live="polite"></div>
+
+  <div id="tab-tasks" class="tab-content active" role="tabpanel">
     <div id="kanban">
       <div class="kanban-section" data-column="standing">
-        <div class="section-header" data-column="standing">
-          <span class="collapse-arrow">&#9660;</span>
+        <div class="section-header" data-column="standing" role="button" tabindex="0" aria-expanded="true">
+          <span class="collapse-arrow">▼</span>
           <span class="section-title">Standing</span>
           <span class="task-count">0</span>
         </div>
@@ -40,8 +39,8 @@
       </div>
 
       <div class="kanban-section" data-column="priority">
-        <div class="section-header" data-column="priority">
-          <span class="collapse-arrow">&#9660;</span>
+        <div class="section-header" data-column="priority" role="button" tabindex="0" aria-expanded="true">
+          <span class="collapse-arrow">▼</span>
           <span class="section-title">Priority</span>
           <span class="task-count">0</span>
         </div>
@@ -49,8 +48,8 @@
       </div>
 
       <div class="kanban-section" data-column="inprogress">
-        <div class="section-header" data-column="inprogress">
-          <span class="collapse-arrow">&#9660;</span>
+        <div class="section-header" data-column="inprogress" role="button" tabindex="0" aria-expanded="true">
+          <span class="collapse-arrow">▼</span>
           <span class="section-title">In Progress</span>
           <span class="task-count">0</span>
         </div>
@@ -58,8 +57,8 @@
       </div>
 
       <div class="kanban-section" data-column="todo">
-        <div class="section-header" data-column="todo">
-          <span class="collapse-arrow">&#9660;</span>
+        <div class="section-header" data-column="todo" role="button" tabindex="0" aria-expanded="true">
+          <span class="collapse-arrow">▼</span>
           <span class="section-title">To-Do</span>
           <span class="task-count">0</span>
         </div>
@@ -67,8 +66,8 @@
       </div>
 
       <div class="kanban-section" data-column="rainyday">
-        <div class="section-header" data-column="rainyday">
-          <span class="collapse-arrow">&#9660;</span>
+        <div class="section-header" data-column="rainyday" role="button" tabindex="0" aria-expanded="true">
+          <span class="collapse-arrow">▼</span>
           <span class="section-title">Rainy Day</span>
           <span class="task-count">0</span>
         </div>
@@ -76,77 +75,96 @@
       </div>
 
       <div class="kanban-section" data-column="done">
-        <div class="section-header" data-column="done">
-          <span class="collapse-arrow">&#9660;</span>
+        <div class="section-header" data-column="done" role="button" tabindex="0" aria-expanded="true">
+          <span class="collapse-arrow">▼</span>
           <span class="section-title">Done</span>
           <span class="task-count">0</span>
-          <button id="btn-clear-done" class="clear-done-btn" title="Clear done tasks">Clear</button>
+          <button id="btn-clear-done" class="clear-done-btn" type="button" title="Clear done tasks">Clear</button>
         </div>
         <div class="task-list" data-column="done"></div>
       </div>
     </div>
 
-    <!-- Add Task -->
     <div id="add-task-bar">
-      <input type="text" id="new-task-input" placeholder="Add a new task..." />
-      <select id="new-task-column">
+      <input type="text" id="new-task-input" placeholder="Add a new task..." aria-label="New task title">
+      <select id="new-task-column" aria-label="Task column">
         <option value="standing">Standing</option>
         <option value="priority">Priority</option>
         <option value="inprogress">In Progress</option>
         <option value="todo" selected>To-Do</option>
         <option value="rainyday">Rainy Day</option>
       </select>
-      <button id="btn-add-task">+</button>
-      <button id="btn-sort-alpha" title="Sort all columns alphabetically">A&#8595;Z</button>
+      <button id="btn-add-task" type="button" aria-label="Add task">+</button>
+      <button id="btn-sort-alpha" type="button" title="Sort all columns alphabetically">A↓Z</button>
     </div>
   </div>
 
-  <!-- Tickets Tab -->
-  <div id="tab-tickets" class="tab-content">
+  <div id="tab-tickets" class="tab-content" role="tabpanel">
     <div id="tickets-header">
-      <button id="btn-refresh-tickets" title="Refresh tickets">&#8635; Refresh</button>
+      <button id="btn-refresh-tickets" type="button" title="Refresh tickets">↻ Refresh</button>
       <label id="show-hidden-label">
-        <input type="checkbox" id="show-hidden-tickets" /> Show hidden
+        <input type="checkbox" id="show-hidden-tickets"> Show hidden
       </label>
-      <button id="btn-change-api-key" title="Change API key">&#9881;</button>
+      <button id="btn-change-api-key" type="button" title="Reconnect Desk365">Reconnect</button>
     </div>
-    <div id="tickets-status"></div>
+    <div id="tickets-status" class="status-text" aria-live="polite"></div>
     <div id="tickets-list"></div>
 
-    <!-- API Key Setup (shown when no key configured) -->
-    <div id="api-key-setup" style="display: none;">
-      <p>Connect to your Desk365 account.</p>
-      <p class="hint">Domain: e.g. <em>yourcompany.desk365.io</em></p>
-      <input type="text" id="domain-input" placeholder="yourcompany.desk365.io" />
-      <p class="hint" style="margin-top:8px;">API key: find it at Settings &gt; Integrations &gt; API in Desk365.</p>
-      <input type="password" id="api-key-input" placeholder="Paste API key..." />
-      <button id="btn-save-api-key">Connect</button>
+    <div id="api-key-setup" class="card hidden">
+      <h2 class="card-title">Desk365 Connection</h2>
+      <p>Connect to your Desk365 account. The hostname is stored in your shared config. The API key is stored securely in your OS credential store.</p>
+      <label class="field-label" for="domain-input">Desk365 hostname</label>
+      <input type="text" id="domain-input" placeholder="yourcompany.desk365.io" spellcheck="false" autocomplete="off">
+      <p class="hint">Hostname only. Do not include `https://` or any path.</p>
+      <label class="field-label" for="api-key-input">Desk365 API key</label>
+      <input type="password" id="api-key-input" placeholder="Paste API key..." autocomplete="off">
+      <p class="hint">Find it in Desk365 under Settings → Integrations → API.</p>
+      <button id="btn-save-api-key" type="button" class="primary-btn">Save Securely</button>
     </div>
   </div>
 
-  <!-- Notes Tab -->
-  <div id="tab-notes" class="tab-content">
-    <textarea id="notes-area" placeholder="Type your notes here..."></textarea>
+  <div id="tab-notes" class="tab-content" role="tabpanel">
+    <textarea id="notes-area" placeholder="Type your notes here..." aria-label="Notes"></textarea>
   </div>
 
-  <!-- Settings Tab -->
-  <div id="tab-settings" class="tab-content">
+  <div id="tab-settings" class="tab-content" role="tabpanel">
     <div id="settings-panel">
+      <div class="settings-section">
+        <div class="settings-section-title">Storage</div>
+        <p class="settings-hint">
+          Shared data includes tasks, notes, Desk365 settings, and hidden ticket state. Local settings and window position remain machine-specific.
+        </p>
+        <div id="storage-status-card" class="info-card">
+          <div id="storage-mode-label" class="info-card-label">Storage mode</div>
+          <div id="storage-mode-value" class="info-card-value">Loading…</div>
+          <div id="storage-message" class="info-card-message hidden"></div>
+        </div>
+      </div>
+
       <div class="settings-section">
         <div class="settings-section-title">Sync Folder</div>
         <p class="settings-hint">
-          Point to a cloud-synced folder (OneDrive, Dropbox, iCloud Drive, etc.) to share tasks, notes, and config between your Windows and Mac machines. Window position stays machine-specific and is never synced.
+          Point to a cloud-synced folder to share tasks, notes, and Desk365 settings between your Windows and Mac machines. If that folder goes offline, the app will pause shared-data access instead of silently writing somewhere else.
         </p>
         <span id="sync-folder-display" class="settings-value">None — using local app data folder</span>
         <div class="settings-buttons">
-          <button id="btn-browse-sync-folder" class="settings-btn">Browse...</button>
-          <button id="btn-clear-sync-folder" class="settings-btn hidden">Clear</button>
+          <button id="btn-browse-sync-folder" type="button" class="settings-btn">Browse…</button>
+          <button id="btn-clear-sync-folder" type="button" class="settings-btn hidden">Clear</button>
+        </div>
+      </div>
+
+      <div id="about-section" class="settings-section">
+        <div class="settings-section-title">About</div>
+        <div class="info-card">
+          <div id="about-product" class="about-product">TaskTracker Extreme 3000</div>
+          <div id="about-version" class="about-meta">Version</div>
+          <div id="about-copyright" class="about-meta">Copyright</div>
+          <div id="about-license" class="about-meta">License</div>
+          <button id="btn-open-github" type="button" class="settings-btn">Open GitHub Page</button>
         </div>
       </div>
     </div>
   </div>
-
-  <div id="build-stamp">Built: March 30, 2026, #4</div>
 
   <script src="vendor/Sortable.min.js"></script>
   <script src="app.js"></script>

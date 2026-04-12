@@ -1,139 +1,85 @@
-// === Desk365 Tickets ===
+let desk365Base = '';
+const POLL_INTERVAL = 5 * 60 * 1000;
 
-let DESK365_BASE = '';
-const POLL_INTERVAL = 5 * 60 * 1000; // 5 minutes
-
-let config = null;
+let ticketState = null;
 let hiddenTickets = [];
 let currentTickets = [];
 let seenTicketNumbers = new Set();
 let pollTimer = null;
 
-// DOM elements
 const ticketsList = document.getElementById('tickets-list');
 const ticketsStatus = document.getElementById('tickets-status');
 const apiKeySetup = document.getElementById('api-key-setup');
 const refreshBtn = document.getElementById('btn-refresh-tickets');
 const showHiddenCheckbox = document.getElementById('show-hidden-tickets');
+const changeApiKeyBtn = document.getElementById('btn-change-api-key');
+const saveApiKeyBtn = document.getElementById('btn-save-api-key');
 
-// Initialize tickets
-async function initTickets() {
-  config = await invoke('load_file', { filename: 'config.json' });
-  const hiddenData = await invoke('load_file', { filename: 'hidden-tickets.json' });
-  hiddenTickets = (hiddenData && hiddenData.tickets) || [];
-
-  if (config && config.desk365Domain) {
-    DESK365_BASE = `https://${config.desk365Domain}/app/tickets/ticketdetails?tktNum=`;
-    document.getElementById('domain-input').value = config.desk365Domain;
-  }
-
-  if (config && config.apiKey) {
-    apiKeySetup.style.display = 'none';
-    fetchAndRenderTickets();
-    startPolling();
-  } else {
-    apiKeySetup.style.display = 'block';
-    ticketsList.innerHTML = '';
-    ticketsStatus.textContent = '';
-  }
+function stopPolling() {
+  if (pollTimer) clearInterval(pollTimer);
+  pollTimer = null;
 }
 
-// Save API key + domain
-document.getElementById('btn-save-api-key').addEventListener('click', async () => {
-  const key    = document.getElementById('api-key-input').value.trim();
-  const domain = document.getElementById('domain-input').value.trim().replace(/^https?:\/\//, '');
-  if (!key || !domain) return;
-
-  config = { apiKey: key, desk365Domain: domain };
-  DESK365_BASE = `https://${domain}/app/tickets/ticketdetails?tktNum=`;
-  await invoke('save_file', { filename: 'config.json', data: config });
-  apiKeySetup.style.display = 'none';
-  fetchAndRenderTickets();
-  startPolling();
-});
-
-// Enter key for API key input
-document.getElementById('api-key-input').addEventListener('keydown', (e) => {
-  if (e.key === 'Enter') document.getElementById('btn-save-api-key').click();
-});
-
-// Fetch tickets from Desk365 API (HTTP is handled in Rust to avoid CORS)
-async function fetchAndRenderTickets() {
-  if (!config || !config.apiKey) return;
-
-  ticketsStatus.textContent = 'Loading tickets...';
-  refreshBtn.disabled = true;
-
-  const result = await invoke('fetch_tickets', {
-    apiKey: config.apiKey,
-    desk365Domain: config.desk365Domain,
-  });
-
-  refreshBtn.disabled = false;
-
-  if (!result.success) {
-    ticketsStatus.textContent = 'Error: ' + result.error;
-    apiKeySetup.style.display = 'block';
-    document.getElementById('api-key-input').value = '';
-    return;
-  }
-
-  const newTickets = result.tickets;
-
-  // Notify for genuinely new tickets (not seen in previous poll)
-  if (seenTicketNumbers.size > 0) {
-    const brandNew = newTickets.filter(t => !seenTicketNumbers.has(t.TicketNumber));
-    if (brandNew.length > 0) {
-      const summary = brandNew.length === 1
-        ? `#${brandNew[0].TicketNumber}: ${brandNew[0].Subject}`
-        : `${brandNew.length} new tickets`;
-      invoke('show_notification', { title: 'New Desk365 Tickets', body: summary });
-    }
-  }
-
-  // Sort newest first
-  newTickets.sort((a, b) => {
-    const numA = parseInt(a.TicketNumber, 10) || 0;
-    const numB = parseInt(b.TicketNumber, 10) || 0;
-    return numB - numA;
-  });
-
-  seenTicketNumbers = new Set(newTickets.map(t => t.TicketNumber));
-  currentTickets = newTickets;
-  updateTabCount('tickets', currentTickets.length);
-
-  ticketsStatus.textContent = `${newTickets.length} unresolved tickets (updated ${new Date().toLocaleTimeString()})`;
-  renderTickets();
+function startPolling() {
+  stopPolling();
+  pollTimer = setInterval(fetchAndRenderTickets, POLL_INTERVAL);
 }
 
-// Render ticket list
+function setTicketSetupVisible(visible) {
+  apiKeySetup.classList.toggle('hidden', !visible);
+}
+
+function setTicketControlsEnabled(enabled) {
+  refreshBtn.disabled = !enabled;
+  showHiddenCheckbox.disabled = !enabled;
+  changeApiKeyBtn.disabled = !enabled;
+  saveApiKeyBtn.disabled = !enabled;
+  document.getElementById('domain-input').disabled = !enabled;
+  document.getElementById('api-key-input').disabled = !enabled;
+}
+
+function setDesk365Base(domain) {
+  desk365Base = domain ? `https://${domain}/app/tickets/ticketdetails?tktNum=` : '';
+}
+
+async function loadTicketState() {
+  ticketState = await window.callCommand('load_ticket_settings');
+  const hiddenData = await window.callCommand('load_hidden_tickets');
+  hiddenTickets = hiddenData.tickets || [];
+  setDesk365Base(ticketState.desk365Domain || '');
+  document.getElementById('domain-input').value = ticketState.desk365Domain || '';
+}
+
 function renderTickets() {
   const showHidden = showHiddenCheckbox.checked;
   ticketsList.innerHTML = '';
 
   const filtered = showHidden
     ? currentTickets
-    : currentTickets.filter(t => !hiddenTickets.includes(t.TicketNumber));
+    : currentTickets.filter((ticket) => !hiddenTickets.includes(ticket.TicketNumber));
 
-  if (filtered.length === 0) {
-    ticketsList.innerHTML = '<div style="padding: 20px; text-align: center; color: var(--text-muted);">No tickets to show</div>';
+  if (!filtered.length) {
+    ticketsList.innerHTML = '<div class="empty-state">No tickets to show</div>';
     return;
   }
 
-  filtered.forEach(ticket => {
+  filtered.forEach((ticket) => {
     const isHidden = hiddenTickets.includes(ticket.TicketNumber);
     const card = document.createElement('div');
-    card.className = 'ticket-card' + (isHidden ? ' hidden-ticket' : '');
+    card.className = `ticket-card${isHidden ? ' hidden-ticket' : ''}`;
 
-    const info = document.createElement('div');
+    const info = document.createElement('button');
     info.className = 'ticket-info';
+    info.type = 'button';
     info.addEventListener('click', () => {
-      invoke('open_external', { url: DESK365_BASE + ticket.TicketNumber });
+      window.openExternal(`${desk365Base}${ticket.TicketNumber}`).catch((error) => {
+        ticketsStatus.textContent = error.message || 'Could not open the Desk365 ticket.';
+      });
     });
 
     const num = document.createElement('span');
     num.className = 'ticket-number';
-    num.textContent = '#' + ticket.TicketNumber;
+    num.textContent = `#${ticket.TicketNumber}`;
 
     const subject = document.createElement('div');
     subject.className = 'ticket-subject';
@@ -143,18 +89,21 @@ function renderTickets() {
     meta.className = 'ticket-meta';
 
     const status = document.createElement('span');
-    status.className = 'ticket-status ' + (ticket.Status || '').toLowerCase().replace(/\s+/g, '');
+    status.className = `ticket-status ${(ticket.Status || '').toLowerCase().replace(/\s+/g, '')}`;
     status.textContent = ticket.Status || 'Unknown';
-
-    const priority = document.createElement('span');
-    priority.textContent = ticket.Priority || '';
-
-    const agent = document.createElement('span');
-    agent.textContent = ticket.Agent ? ticket.Agent.split('@')[0] : '';
-
     meta.appendChild(status);
-    if (ticket.Priority) meta.appendChild(priority);
-    if (ticket.Agent) meta.appendChild(agent);
+
+    if (ticket.Priority) {
+      const priority = document.createElement('span');
+      priority.textContent = ticket.Priority;
+      meta.appendChild(priority);
+    }
+
+    if (ticket.Agent) {
+      const agent = document.createElement('span');
+      agent.textContent = ticket.Agent.split('@')[0];
+      meta.appendChild(agent);
+    }
 
     info.appendChild(num);
     info.appendChild(subject);
@@ -162,10 +111,13 @@ function renderTickets() {
 
     const hideBtn = document.createElement('button');
     hideBtn.className = 'ticket-hide-btn';
-    hideBtn.textContent = isHidden ? '\u{1F441}' : '\u{1F6AB}';
-    hideBtn.title = isHidden ? 'Unhide' : 'Hide';
-    hideBtn.addEventListener('click', (e) => {
-      e.stopPropagation();
+    hideBtn.type = 'button';
+    hideBtn.textContent = isHidden ? '👁' : '🚫';
+    hideBtn.title = isHidden ? 'Unhide ticket' : 'Hide ticket';
+    hideBtn.setAttribute('aria-label', `${isHidden ? 'Unhide' : 'Hide'} ticket ${ticket.TicketNumber}`);
+    hideBtn.disabled = !(window.currentStorageStatus && window.currentStorageStatus.sharedDataAvailable);
+    hideBtn.addEventListener('click', (event) => {
+      event.stopPropagation();
       toggleHideTicket(ticket.TicketNumber);
     });
 
@@ -175,39 +127,163 @@ function renderTickets() {
   });
 }
 
-// Toggle hide/unhide a ticket
 async function toggleHideTicket(ticketNumber) {
-  const idx = hiddenTickets.indexOf(ticketNumber);
-  if (idx >= 0) {
-    hiddenTickets.splice(idx, 1);
+  if (!(window.currentStorageStatus && window.currentStorageStatus.sharedDataAvailable)) return;
+
+  const index = hiddenTickets.indexOf(ticketNumber);
+  if (index >= 0) {
+    hiddenTickets.splice(index, 1);
   } else {
     hiddenTickets.push(ticketNumber);
   }
-  await invoke('save_file', {
-    filename: 'hidden-tickets.json',
-    data: { tickets: hiddenTickets },
-  });
-  renderTickets();
+
+  try {
+    await window.callCommand('save_hidden_tickets', {
+      document: {
+        schemaVersion: 1,
+        tickets: hiddenTickets,
+      },
+    });
+    renderTickets();
+  } catch (error) {
+    ticketsStatus.textContent = error.message || 'Could not save hidden ticket state.';
+    await window.refreshStorageStatus();
+    await initializeTickets();
+  }
 }
 
-// Show hidden toggle
+async function fetchAndRenderTickets() {
+  if (!(ticketState && ticketState.hasApiKey && ticketState.desk365Domain)) return;
+  if (!(window.currentStorageStatus && window.currentStorageStatus.sharedDataAvailable)) return;
+
+  ticketsStatus.textContent = 'Loading tickets…';
+  refreshBtn.disabled = true;
+
+  try {
+    const result = await window.callCommand('fetch_tickets');
+    const newTickets = result.tickets || [];
+
+    if (seenTicketNumbers.size > 0) {
+      const brandNew = newTickets.filter((ticket) => !seenTicketNumbers.has(ticket.TicketNumber));
+      if (brandNew.length > 0) {
+        const summary = brandNew.length === 1
+          ? `#${brandNew[0].TicketNumber}: ${brandNew[0].Subject}`
+          : `${brandNew.length} new tickets`;
+        await window.callCommand('show_notification', {
+          title: 'New Desk365 Tickets',
+          body: summary,
+        });
+      }
+    }
+
+    newTickets.sort((a, b) => (parseInt(b.TicketNumber, 10) || 0) - (parseInt(a.TicketNumber, 10) || 0));
+
+    seenTicketNumbers = new Set(newTickets.map((ticket) => ticket.TicketNumber));
+    currentTickets = newTickets;
+    window.updateTabCount('tickets', currentTickets.length);
+    ticketsStatus.textContent = `${newTickets.length} unresolved tickets (updated ${new Date().toLocaleTimeString()})`;
+    renderTickets();
+  } catch (error) {
+    ticketsStatus.textContent = error.message || 'Could not load tickets.';
+    setTicketSetupVisible(true);
+  } finally {
+    refreshBtn.disabled = !(window.currentStorageStatus && window.currentStorageStatus.sharedDataAvailable);
+  }
+}
+
+async function initializeTickets() {
+  stopPolling();
+  currentTickets = [];
+  seenTicketNumbers = new Set();
+
+  try {
+    await loadTicketState();
+  } catch (error) {
+    ticketsStatus.textContent = error.message || 'Could not load Desk365 settings.';
+    ticketsList.innerHTML = '';
+    setTicketSetupVisible(true);
+    return;
+  }
+
+  const storageAvailable = Boolean(window.currentStorageStatus && window.currentStorageStatus.sharedDataAvailable);
+  setTicketControlsEnabled(storageAvailable);
+
+  if (ticketState.authError) {
+    ticketsStatus.textContent = ticketState.authError;
+    setTicketSetupVisible(true);
+    ticketsList.innerHTML = '';
+    return;
+  }
+
+  if (ticketState.desk365Domain && ticketState.hasApiKey && storageAvailable) {
+    setTicketSetupVisible(false);
+    await fetchAndRenderTickets();
+    startPolling();
+  } else {
+    setTicketSetupVisible(true);
+    ticketsList.innerHTML = '';
+    if (!storageAvailable) {
+      ticketsStatus.textContent = window.currentStorageStatus.message || 'Desk365 settings are unavailable while shared data is offline.';
+    } else if (ticketState.desk365Domain && !ticketState.hasApiKey) {
+      ticketsStatus.textContent = 'Desk365 hostname saved. Add your API key to finish connecting.';
+    } else {
+      ticketsStatus.textContent = '';
+    }
+  }
+}
+
+saveApiKeyBtn.addEventListener('click', async () => {
+  if (!(window.currentStorageStatus && window.currentStorageStatus.sharedDataAvailable)) {
+    ticketsStatus.textContent = window.currentStorageStatus.message || 'Desk365 settings are unavailable while shared data is offline.';
+    return;
+  }
+
+  const key = document.getElementById('api-key-input').value.trim();
+  const domain = document.getElementById('domain-input').value.trim();
+  if (!key || !domain) {
+    ticketsStatus.textContent = 'Enter both the Desk365 hostname and API key.';
+    return;
+  }
+
+  saveApiKeyBtn.disabled = true;
+  ticketsStatus.textContent = 'Saving Desk365 credentials…';
+
+  try {
+    await window.callCommand('save_ticket_settings', { desk365Domain: domain });
+    await window.callCommand('save_secure_api_key', { apiKey: key });
+    document.getElementById('api-key-input').value = '';
+    await initializeTickets();
+  } catch (error) {
+    ticketsStatus.textContent = error.message || 'Could not save Desk365 credentials.';
+    setTicketSetupVisible(true);
+  } finally {
+    saveApiKeyBtn.disabled = !(window.currentStorageStatus && window.currentStorageStatus.sharedDataAvailable);
+  }
+});
+
+document.getElementById('api-key-input').addEventListener('keydown', (event) => {
+  if (event.key === 'Enter') saveApiKeyBtn.click();
+});
+
+refreshBtn.addEventListener('click', fetchAndRenderTickets);
 showHiddenCheckbox.addEventListener('change', renderTickets);
 
-// Refresh button
-refreshBtn.addEventListener('click', fetchAndRenderTickets);
-
-// Change API key button
-document.getElementById('btn-change-api-key').addEventListener('click', () => {
-  apiKeySetup.style.display = 'block';
-  document.getElementById('api-key-input').value = '';
+changeApiKeyBtn.addEventListener('click', () => {
+  setTicketSetupVisible(true);
   document.getElementById('api-key-input').focus();
 });
 
-// Polling
-function startPolling() {
-  if (pollTimer) clearInterval(pollTimer);
-  pollTimer = setInterval(fetchAndRenderTickets, POLL_INTERVAL);
-}
+window.addEventListener('storage-status-changed', async (event) => {
+  const status = event.detail;
+  const storageAvailable = Boolean(status && status.sharedDataAvailable);
+  setTicketControlsEnabled(storageAvailable);
 
-// Initialize on load
-initTickets();
+  if (!storageAvailable) {
+    stopPolling();
+    ticketsStatus.textContent = status.message || 'Desk365 settings are unavailable while shared data is offline.';
+  }
+
+  await initializeTickets();
+});
+
+initializeTickets();

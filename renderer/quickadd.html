@@ -2,37 +2,22 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Quick Add</title>
   <link rel="stylesheet" href="styles.css">
-  <style>
-    html, body {
-      background: transparent;
-      height: 100%;
-      margin: 0;
-      padding: 0;
-      overflow: hidden;
-    }
-  </style>
 </head>
-<body>
+<body class="quick-add-body">
   <div class="quick-add-container">
-    <input type="text" class="quick-add-input" id="quick-input" placeholder="Quick add task (Enter to save, Esc to cancel)..." autofocus />
+    <input
+      type="text"
+      class="quick-add-input"
+      id="quick-input"
+      placeholder="Quick add task (Enter to save, Esc to cancel)…"
+      aria-label="Quick add task"
+      autofocus
+    >
+    <div id="quick-add-status" class="quick-add-status" aria-live="polite"></div>
   </div>
-  <script>
-    const { invoke } = window.__TAURI__.core;
-    const input = document.getElementById('quick-input');
-    input.addEventListener('keydown', (e) => {
-      if (e.key === 'Enter') {
-        const title = input.value.trim();
-        if (title) {
-          invoke('quick_add_task', { title });
-        } else {
-          invoke('close_quick_add');
-        }
-      } else if (e.key === 'Escape') {
-        invoke('close_quick_add');
-      }
-    });
-  </script>
+  <script src="quickadd.js"></script>
 </body>
 </html>

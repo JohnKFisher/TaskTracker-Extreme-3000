@@ -1,8 +1,13 @@
 {
+  "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
-  "description": "Default capabilities for TaskTracker Extreme 3000",
+  "description": "Default local-window capabilities for TaskTracker Extreme 3000",
   "windows": ["main", "quick-add"],
+  "platforms": ["macOS", "windows"],
   "permissions": [
-    "core:default"
+    "core:app:default",
+    "core:event:default",
+    "core:webview:default",
+    "core:window:default"
   ]
 }

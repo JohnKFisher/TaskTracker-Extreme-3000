@@ -23,3 +23,19 @@ Status: approved
 ## 2026-04-11 — Build and distribute through GitHub Actions artifacts
 Rationale: The repo already uses a multi-platform GitHub Actions workflow that builds Windows and macOS artifacts on pushes to `main` and manual dispatch. That matches the project’s documented distribution path and avoids making local Rust toolchains a release prerequisite.
 Status: approved
+
+## 2026-04-11 — Windows is the primary UX tie-breaker
+Rationale: The project still targets both Windows and macOS, but platform-specific UX decisions now resolve in favor of Windows conventions unless there is an explicit exception. This keeps the cross-platform behavior predictable and matches the current product direction.
+Status: approved
+
+## 2026-04-11 — Store Desk365 API keys only in the OS credential store
+Rationale: `config.json` now stores only non-secret Desk365 settings, while the API key lives in the platform credential store. This removes plaintext secret storage without adding any network dependency or hidden fallback.
+Status: approved
+
+## 2026-04-11 — Use version.json as the single checked-in version source
+Rationale: App version/build metadata now comes from `version.json`, with helper scripts to sync tracked files and bump patch/build values intentionally. This replaces the old gitignored build-counter flow and makes builds reproducible from committed source.
+Status: approved
+
+## 2026-04-11 — Do not silently fall back when a configured sync folder is unavailable
+Rationale: If the chosen shared-data folder disappears, the app now reports that condition and pauses shared-data access instead of writing divergent local copies. This protects data integrity and makes degraded states visible.
+Status: approved

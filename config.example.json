@@ -1,4 +1,4 @@
 {
-  "apiKey": "your-desk365-api-key-here",
+  "schemaVersion": 2,
   "desk365Domain": "yourcompany.desk365.io"
 }

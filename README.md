@@ -2,9 +2,13 @@
 
 A personal sidebar task manager for Windows and macOS with Desk365 helpdesk integration. Built for my own workflow. Outside usefulness is incidental, and no support, stability guarantees, or warranty of any kind is implied.
 
+GitHub: [JohnKFisher/TaskTracker-Extreme-3000](https://github.com/JohnKFisher/TaskTracker-Extreme-3000)
+
 ## What This Is
 
-A largely vibe-coded personal hobby app that lives on the right edge of your screen. It keeps tasks, in-progress work, and open support tickets visible at all times without taking up a full window. Built with [Tauri v2](https://tauri.app) — native WebView, ~8MB binary, no Electron.
+A largely vibe-coded personal hobby app that lives on the edge of the screen and keeps tasks, notes, and support work visible without turning into a full desktop suite. It is built with [Tauri v2](https://tauri.app) for a lightweight native shell and a plain HTML/CSS/JS renderer.
+
+Windows is the primary UX tie-breaker for the project. macOS remains a supported target, but when platform conventions differ, Windows behavior wins unless explicitly documented otherwise.
 
 ## What It Does
 
@@ -12,41 +16,68 @@ A largely vibe-coded personal hobby app that lives on the right edge of your scr
 - Drag-and-drop reordering within and between columns
 - Global shortcut (`Ctrl/Cmd+Shift+T`) to show or hide the sidebar
 - Quick-add overlay (`Ctrl/Cmd+Shift+N`) to capture a task without switching windows
-- Desk365 ticket integration — shows your open/unresolved tickets, auto-refreshes every 5 minutes
+- Desk365 ticket integration with secure API-key storage and periodic refresh
 - Persistent notes tab for scratch text
-- Minimizes to system tray instead of closing
-- Settings tab to configure a sync folder for keeping data in sync across machines
+- System tray behavior instead of closing the app window
+- Settings tab with sync-folder controls, storage status, and About info
 
-## Sync Between Machines
+## Data, Privacy, And Storage
 
-The app supports an optional sync folder. Point it at any cloud-synced location (OneDrive, iCloud Drive, Dropbox, etc.) and your tasks, notes, and config will be shared across machines. Window position stays machine-specific.
+All user data stays local unless you explicitly connect your own Desk365 account. There is no telemetry, analytics, or hidden network activity.
 
-Configure it in the **Settings** tab (gear icon) inside the app.
-
-## Data And Privacy
-
-All data is stored locally on your machine in JSON files. Nothing is sent anywhere except outbound API calls to your own Desk365 instance. No telemetry, no analytics.
-
-When packaged, local data is stored in your OS app-data folder:
+When packaged, local data is stored in the OS app-data folder:
 - **Windows:** `%AppData%\com.tasktracker.extreme3000\`
 - **macOS:** `~/Library/Application Support/com.tasktracker.extreme3000/`
 
-If a sync folder is configured, task/note/config data is stored there instead. The `data/` project folder and `local-settings.json` are gitignored and will never be committed.
+Shared-data files are plain JSON:
+- `tasks.json`
+- `notes.json`
+- `config.json` (Desk365 hostname only, no secret)
+- `hidden-tickets.json`
 
-## First-Run Setup
+Machine-specific data stays local and is never synced:
+- `local-settings.json`
+- `window-state.json`
 
-On first launch the Tickets tab will prompt you for your Desk365 domain and API key. Your API key is stored locally in `config.json` — never committed to the repo.
+Desk365 API keys are **not** stored in `config.json`. They are stored in the operating system’s secure credential store.
+
+If you configure a sync folder, shared data is written there instead of the local app-data folder. If that folder later becomes unavailable, the app will pause shared-data access and show a warning instead of silently falling back to a different location.
+
+## First-Run Desk365 Setup
+
+The Tickets tab will ask for:
+- your Desk365 hostname, stored in `config.json`
+- your Desk365 API key, stored securely in the OS credential store
+
+Enter the hostname only, for example `yourcompany.desk365.io`. Do not include `https://` or a path.
+
+## Versioning
+
+Version/build metadata now comes from the checked-in `version.json` file.
+
+- `marketingVersion` is the app version
+- `buildNumber` is the monotonically increasing build number
+
+Useful commands:
+
+```bash
+npm run version:check   # verify tracked version fields match version.json
+npm run version:sync    # sync tracked version fields from version.json
+npm run version:bump    # bump patch version + build number
+```
+
+Release builds are expected to run from already-synced, committed version metadata. The build itself should not rewrite tracked source files.
 
 ## Getting Builds
 
-GitHub Actions builds installers automatically on every push to `main`. No local Rust installation needed.
+GitHub Actions builds installers automatically on every push to `main`.
 
 Download from: **GitHub → Actions → (latest run) → Artifacts**
 
 | Artifact | Platform |
 |---|---|
 | `tasktracker-extreme-3000-windows-x64` | Windows installer |
-| `tasktracker-extreme-3000-macos-apple-silicon` | macOS M1/M2/M3 DMG |
+| `tasktracker-extreme-3000-macos-apple-silicon` | macOS Apple Silicon DMG |
 | `tasktracker-extreme-3000-macos-intel` | macOS Intel DMG |
 
 > **First-run warning:** Builds are unsigned. On macOS: right-click the app → Open → Open anyway. On Windows: SmartScreen → "More info" → "Run anyway". One-time prompt.
@@ -57,11 +88,19 @@ Requires [Rust](https://rustup.rs) and Node.js.
 
 ```bash
 npm install
-npm run dev    # hot-reload dev mode
-npm run build  # production build
+npm run version:check
+npm run dev
+```
+
+For a production build:
+
+```bash
+npm run version:check
+npm run build
 ```
 
 ## Limitations
 
-- Requires a Desk365 account for ticket integration (the task board works without it)
-- Tested on my machines; your mileage may vary
+- Requires a Desk365 account for ticket integration; the task board and notes still work without it
+- Shared-data features depend on the configured sync folder remaining reachable
+- Tested primarily on my own machines; your mileage may vary

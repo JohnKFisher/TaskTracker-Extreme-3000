@@ -3,13 +3,16 @@
   "version": "2.0.0",
   "description": "Personal sidebar task tracker with Desk365 integration",
   "scripts": {
-    "dev": "tauri dev",
-    "build": "tauri build",
-    "prebuild": "node scripts/bump-build.js",
-    "tauri": "tauri"
+    "dev": "node scripts/version-sync.js --check && tauri dev",
+    "build": "node scripts/version-sync.js --check && tauri build",
+    "tauri": "tauri",
+    "version:check": "node scripts/version-sync.js --check",
+    "version:sync": "node scripts/version-sync.js",
+    "version:bump": "node scripts/version-bump.js",
+    "test:version": "node --test test/version-scripts.test.js"
   },
   "keywords": [],
-  "license": "ISC",
+  "license": "MIT",
   "type": "commonjs",
   "devDependencies": {
     "@tauri-apps/cli": "^2"
