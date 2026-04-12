@@ -386,34 +386,132 @@ If the project depends on external binaries, bundled tools, hardware codecs, GPU
 
 ## CI / GitHub Actions
 
-Every project should have a `.github/workflows/build.yml` that:
-- Triggers on push to `main` and `workflow_dispatch`
-- Sets explicit least-privilege permissions at the workflow level:
+### Desktop CI / Release Defaults (If relevant)
+
+For desktop apps, default to a **two-workflow** GitHub Actions release
+model unless the project brief or decision log explicitly approves
+something else:
+
+- `.github/workflows/build.yml`
+- `.github/workflows/release.yml`
+
+This applies to:
+- Tauri desktop apps
+- native macOS apps
+- native Windows apps
+- other traditional desktop app repos where CI artifacts and tagged
+  releases make sense
+
+### Default workflow shape
+
+`build.yml`:
+- trigger on push to `main`
+- also support `workflow_dispatch`
+- set explicit least-privilege permissions:
     permissions:
       contents: read
-  Only escalate (e.g. contents: write) when genuinely required. Never
-  omit the permissions block.
-- Produces a downloadable artifact retained 30 days, visible under
-  Actions → (latest run) → Artifacts
-- Uses `fail-fast: false` on any matrix
-- Uses `node-version: lts/*` (never hardcoded) if Node is needed
-- Never hardcodes personal paths, API keys, or machine-specific values
-- If a workflow already exists, update it rather than replacing it
+- produce downloadable artifacts retained 30 days
+- use `fail-fast: false` on any matrix
+- build from committed source only
+- do not mutate tracked version files or other tracked source during CI
 
-**Before writing any workflow, read the repo first:**
-- If a build script exists (build_app.sh, Makefile, scripts/build*, etc.),
-  treat it as the ground truth for assembly steps and mirror it faithfully.
-  Do not invent your own assembly logic when a script already encodes it.
-- Check Package.swift targets and whether .xcodeproj/.xcworkspace exists
-  before deciding on a build approach.
+`release.yml`:
+- trigger on push of tags matching `v*`
+- set explicit least-privilege permissions:
+    permissions:
+      contents: write
+- publish release assets to GitHub Releases from the tagged build
+- build from the committed tag state, not local/generated state
+
+### GitHub Actions runtime rules
+
+For JavaScript-based GitHub Actions:
+- prefer current Node 24-compatible majors of official
+  GitHub-maintained actions
+- do not leave workflows on deprecated Node 20 action majors
+- add this at workflow level:
+  ```yml
+  env:
+    FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+  ```
+- prefer current Node 24-compatible majors for:
+  - `actions/checkout`
+  - `actions/setup-node`
+  - `actions/upload-artifact`
+- if Node is needed, use:
+  ```yml
+  with:
+    node-version: lts/*
+  ```
+- never hardcode personal paths, API keys, or machine-specific values
+- if a workflow already exists, update it rather than replacing it
+
+### Packaging defaults
+
+For desktop app packaging, default to:
+- **macOS:** `.app` packaged inside a `.dmg`
+- **Windows:** portable `.exe` unless installer behavior is explicitly
+  requested
+
+Use clear artifact names that include app name, platform, and packaging
+style.
+Examples:
+- `my-app-windows-portable-exe`
+- `my-app-macos-universal-dmg`
+
+### macOS distribution defaults
+
+For macOS apps:
+- prefer distributing a `.dmg`
+- if Apple signing credentials are **not** configured, prefer **ad-hoc
+  signing** over leaving the app completely unsigned
+- clearly document that ad-hoc signing improves compatibility but does
+  **not** replace Developer ID signing or notarization
+- do not claim ad-hoc signing eliminates Gatekeeper approval prompts
+- if the goal is a downloaded app that opens cleanly without
+  malware-verification or Privacy & Security overrides, the real fix is:
+  - Developer ID signing
+  - notarization
+  - proper CI secret/config setup for Apple credentials
+
+If building a traditional native macOS app:
+- ad-hoc sign the `.app` in CI when full Apple signing is not available
+
+If building a Tauri app:
+- configure ad-hoc signing in `tauri.conf.json` with:
+  ```json
+  "macOS": {
+    "signingIdentity": "-"
+  }
+  ```
+
+### Windows distribution defaults
+
+For Windows apps:
+- prefer a portable `.exe` by default unless installer behavior is
+  explicitly requested
+- if the app needs Windows icon/resources, ensure a real committed `.ico`
+  exists
+- do not assume a PNG-only icon setup is sufficient for Windows
+  packaging
+- clearly disclose that unsigned builds may still trigger SmartScreen
+
+### Before writing any workflow
+
+- If a build script exists (`build_app.sh`, `Makefile`, `scripts/build*`,
+  etc.), treat it as the ground truth for assembly steps and mirror it
+  faithfully. Do not invent your own assembly logic when a script
+  already encodes it.
+- Check Package.swift targets and whether `.xcodeproj` / `.xcworkspace`
+  exists before deciding on a build approach.
 
 ### Build method by project type
 
 **Swift CLI / library** (executableTarget, no GUI assembly): `swift build
 -c release`, `swift test`, upload binary from `.build/release/<n>`.
 
-**Swift macOS GUI app, SPM-only** (no .xcodeproj): If a build script
-exists (build_app.sh, Makefile, scripts/build*, etc.), mirror it
+**Swift macOS GUI app, SPM-only** (no `.xcodeproj`): If a build script
+exists (`build_app.sh`, `Makefile`, `scripts/build*`, etc.), mirror it
 faithfully. If no build script exists, produce the same result a good
 build script would:
 1. Build a universal binary via two swift build invocations and lipo:
@@ -422,26 +520,94 @@ build script would:
      lipo -create -output <n> \
        .build/arm64-apple-macosx/release/<n> \
        .build/x86_64-apple-macosx/release/<n>
-2. Assemble a proper .app bundle:
+2. Assemble a proper `.app` bundle:
      <n>.app/Contents/MacOS/<n>   ← the lipo'd binary
-     <n>.app/Contents/Resources/     ← any .bundle resources from SPM
-     <n>.app/Contents/Info.plist     ← from the repo or generate one
-3. Generate an .icns from source PNG if icon assets are present
-   (iconutil or sips), and place it in Resources/
+     <n>.app/Contents/Resources/  ← any `.bundle` resources from SPM
+     <n>.app/Contents/Info.plist  ← from the repo or generate one
+3. Generate an `.icns` from source PNG if icon assets are present
+   (`iconutil` or `sips`), and place it in Resources/
 4. Ad-hoc codesign the bundle:
      codesign --force --deep --sign - <n>.app
-5. Wrap in a DMG with hdiutil and upload the .dmg as the artifact.
+5. Wrap in a DMG with `hdiutil` and upload the `.dmg` as the artifact.
 Do not produce a bare binary or a zip of a bare binary.
 
-**Swift macOS GUI app, Xcode project** (has .xcodeproj/.xcworkspace):
-xcodebuild with CODE_SIGNING_ALLOWED=NO, then hdiutil for the DMG.
+**Swift macOS GUI app, Xcode project** (has `.xcodeproj` /
+`.xcworkspace`): `xcodebuild` with `CODE_SIGNING_ALLOWED=NO`, then
+`hdiutil` for the DMG.
     xcodebuild -scheme <SchemeName> -configuration Release \
                -derivedDataPath build CODE_SIGNING_ALLOWED=NO
 
-**Tauri (Rust + WebView)**: `tauri-apps/tauri-action@v0` with a matrix
-covering windows-latest/x86_64-pc-windows-msvc,
-macos-14/aarch64-apple-darwin, macos-latest/x86_64-apple-darwin.
-Ensure withGlobalTauri is in app{} in tauri.conf.json (not build{}).
-Commit Cargo.lock.
+**Tauri (Rust + WebView)**:
+- use `tauri-apps/tauri-action@v0`
+- prefer a push-build workflow plus a tag-release workflow
+- default matrix/package targets:
+  - `windows-latest` / `x86_64-pc-windows-msvc` / portable EXE
+  - `macos-14` / `universal-apple-darwin` / universal DMG
+- ensure `withGlobalTauri` is in `app {}` in `tauri.conf.json`, not
+  `build {}`
+- ensure Windows packaging assets exist:
+  - `src-tauri/icons/icon.ico`
+- ensure macOS bundle configuration is explicit when signing is relevant
+- commit `Cargo.lock`
+- commit `package-lock.json` when Node packaging state changes
 
-When adding a new feature, check whether the CI workflow needs updating too.
+### Native app defaults
+
+For non-Tauri desktop apps, follow the same release structure:
+- push builds on `main`
+- tagged releases on `v*`
+- least-privilege workflow permissions
+- downloadable artifacts retained 30 days
+- current Node 24-compatible majors for any JS-based GitHub Actions
+
+For native macOS apps:
+- prefer `.dmg`
+- ad-hoc sign by default if no Apple certificate is configured
+- document that notarization is still required for the cleanest
+  end-user launch path
+
+For native Windows apps:
+- prefer a portable `.exe` unless installer behavior is requested
+- ensure Windows icons/resources are present and committed, not implied
+
+### Release flow default
+
+Default release flow is:
+1. push to `main` for CI artifacts
+2. create and push a `vX.Y.Z` tag for GitHub Release assets
+
+Do **not** rewrite or force-move an existing release tag unless I
+explicitly approve it. If a release fix is needed after a release tag is
+already published, create a new patch version and tag instead.
+
+### Verification required for CI / release work
+
+Before closing CI/release work, verify:
+- workflow YAML parses cleanly
+- checked-in version/source-of-truth files are in sync
+- relevant local tests pass if toolchains are available
+- the new GitHub Actions run has started
+- if a previous remote failure existed, inspect the actual failing job
+  log and fix the root cause, not just the wrapper error
+- if packaging/signing changed, update README and status docs to
+  describe real end-user behavior honestly
+
+### Required final report for CI / release work
+
+When reporting back after CI/release changes, include:
+- pushed commit SHA
+- pushed tag, if any
+- Build workflow URL
+- Release workflow URL, if any
+- whether remote runs are pending, running, passed, or failed
+- any remaining signing, Gatekeeper, SmartScreen, or notarization
+  limitations that still affect users
+
+### Honesty rule for macOS distribution
+
+Do not describe a macOS app as “fixed” for distribution if it is only
+ad-hoc signed. Ad-hoc signing is an improvement, not the final trust
+solution. If notarization is not configured, say that clearly.
+
+When adding a new feature, check whether the CI workflow needs updating
+too.
