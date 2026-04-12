@@ -85,8 +85,8 @@ Push-build artifacts:
 Release flow:
 
 ```bash
-git tag v2.1.2
-git push origin v2.1.2
+git tag v2.1.3
+git push origin v2.1.3
 ```
 
 That tag should match the marketing version in `version.json`.
