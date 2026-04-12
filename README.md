@@ -85,13 +85,13 @@ Push-build artifacts:
 Release flow:
 
 ```bash
-git tag v2.1.1
-git push origin v2.1.1
+git tag v2.1.2
+git push origin v2.1.2
 ```
 
 That tag should match the marketing version in `version.json`.
 
-> **First-run warning:** Builds are unsigned. On macOS: right-click the app → Open → Open anyway. On Windows: SmartScreen → "More info" → "Run anyway". One-time prompt.
+> **First-run warning:** macOS CI builds are ad-hoc signed, which improves compatibility but does **not** replace Apple notarization. You may still need `System Settings -> Privacy & Security -> Open Anyway`. Windows builds are unsigned, so SmartScreen may still require `More info -> Run anyway`.
 
 ## Building From Source
 

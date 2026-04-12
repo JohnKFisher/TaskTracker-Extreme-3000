@@ -47,3 +47,7 @@ Status: approved
 ## 2026-04-11 — Separate push-build artifacts from tagged GitHub releases
 Rationale: Building on every push to `main` keeps fast feedback and downloadable artifacts available, while publishing GitHub Releases only from version tags avoids cluttering Releases with every commit. This creates a cleaner release path without losing automatic CI builds.
 Status: approved
+
+## 2026-04-12 — Ad-hoc sign macOS CI builds when Apple signing credentials are not configured
+Rationale: A macOS `.app` downloaded from the internet is more reliable on Apple Silicon when it is at least ad-hoc signed, even if full Developer ID signing and notarization are not available yet. This improves the default build quality while still being honest that Gatekeeper exceptions may remain necessary.
+Status: approved
