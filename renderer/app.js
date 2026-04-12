@@ -1,5 +1,6 @@
 const invoke = window.__TAURI__.core.invoke;
 const listen = window.__TAURI__.event.listen;
+const currentWindow = window.__TAURI__.window.getCurrentWindow();
 const isMacPlatform = /\bMac\b/.test(navigator.userAgent);
 const beforeQuitHooks = [];
 const saveHooks = [];
@@ -136,6 +137,17 @@ document.querySelectorAll('.tab').forEach((tab) => {
 
 document.getElementById('btn-minimize').addEventListener('click', async () => {
   await callCommand('window_minimize');
+});
+
+document.getElementById('title-bar-drag').addEventListener('mousedown', async (event) => {
+  if (event.buttons !== 1) return;
+  if (event.target.closest('button, input, textarea, select, a')) return;
+
+  try {
+    await currentWindow.startDragging();
+  } catch (error) {
+    console.error('Failed to start dragging the window:', error);
+  }
 });
 
 const closeBtn = document.getElementById('btn-close');
