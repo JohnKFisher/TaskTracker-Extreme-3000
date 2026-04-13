@@ -75,3 +75,7 @@ Status: approved
 ## 2026-04-13 — Use Sortable fallback drag mode and expose a manual legacy import button
 Rationale: WebView2 drag behavior on Windows proved less reliable with the native drag path, so the kanban now uses Sortable's fallback drag handling for more predictable cross-column moves. A manual settings button to scan known legacy locations gives the owner an explicit recovery path if first-run import misses older task/config files.
 Status: approved
+
+## 2026-04-13 — GitHub Releases should describe commit changes since the previous release
+Rationale: Fixed placeholder release notes are too vague to be useful, especially for personal builds that may accumulate several targeted fixes between version bumps. The release workflow now generates the body from commit subjects since the prior release tag while skipping the routine version-bump commit.
+Status: approved

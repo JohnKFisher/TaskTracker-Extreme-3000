@@ -5,11 +5,11 @@ TaskTracker Extreme 3000
 
 ## Current Version / Build
 - Version source of truth: `version.json`
-- Current marketing version: `2.2.1`
-- Current build number: `10`
+- Current marketing version: `2.2.2`
+- Current build number: `11`
 
 ## Overall Status
-Working personal-use Tauri desktop app with a revisioned local/shared JSON data model, secure Desk365 credential storage, explicit shared-storage status reporting, and a checked-in deterministic version/build workflow. Shared task data now watches for cross-machine changes, reconciles periodically, merges common task/hidden-ticket collisions conservatively, can import legacy data into a newly chosen sync folder, and on first rebuilt launch can pull older local Windows/Electron task files into the current app-data location. The current follow-up pass also adds a manual legacy-import button in Settings, moves ticket refresh/reconnect controls to the bottom of the tickets panel, and switches kanban dragging to Sortable's fallback path for better Windows/WebView2 reliability. The repo is now at version `2.2.1` / build `10`.
+Working personal-use Tauri desktop app with a revisioned local/shared JSON data model, secure Desk365 credential storage, explicit shared-storage status reporting, and a checked-in deterministic version/build workflow. Shared task data now watches for cross-machine changes, reconciles periodically, merges common task/hidden-ticket collisions conservatively, can import legacy data into a newly chosen sync folder, and on first rebuilt launch can pull older local Windows/Electron task files into the current app-data location. The current follow-up pass also adds a manual legacy-import button in Settings, moves ticket refresh/reconnect controls to the bottom of the tickets panel, switches kanban dragging to Sortable's fallback path for better Windows/WebView2 reliability, and updates the GitHub release workflow so published release notes describe commit changes since the previous release instead of using a fixed placeholder body. The repo is now at version `2.2.2` / build `11`.
 
 ## What Works Now
 - Sidebar desktop window with tray behavior, global shortcuts, and a quick-add window
@@ -30,7 +30,7 @@ Working personal-use Tauri desktop app with a revisioned local/shared JSON data 
 - Settings tab with storage status plus an About section showing version/build and the public GitHub repo
 - Checked-in version/build workflow through `version.json` and helper scripts
 - GitHub Actions push-build workflow that produces a portable Windows EXE and a universal macOS DMG
-- GitHub Release workflow that publishes the same Windows and macOS assets whenever `version.json` changes on `main`
+- GitHub Release workflow that publishes the same Windows and macOS assets whenever `version.json` changes on `main`, with release notes generated from commit subjects since the prior release tag
 - macOS CI builds now use ad-hoc signing to improve downloaded-app launch behavior on Apple Silicon
 
 ## What Is Partial

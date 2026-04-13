@@ -37,6 +37,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
 
       - name: Determine release version
         id: version
@@ -45,6 +47,41 @@ jobs:
           marketing_version=$(node -p "require('./version.json').marketingVersion")
           echo "marketing_version=$marketing_version" >> "$GITHUB_OUTPUT"
           echo "release_tag=v$marketing_version" >> "$GITHUB_OUTPUT"
+
+      - name: Generate release notes
+        id: notes
+        shell: bash
+        run: |
+          current_tag="${{ steps.version.outputs.release_tag }}"
+          previous_tag=$(git tag --list 'v*' --sort=-v:refname | awk -v current="$current_tag" '$0 != current { print; exit }')
+
+          if [ -n "$previous_tag" ]; then
+            range="$previous_tag..HEAD"
+            heading="Changes since $previous_tag"
+          else
+            first_commit=$(git rev-list --max-parents=0 HEAD | tail -n 1)
+            range="$first_commit..HEAD"
+            heading="Changes in this release"
+          fi
+
+          notes=$(git log "$range" --no-merges --pretty=format:'- %s' \
+            | grep -vE '^- Bump version to ' || true)
+
+          if [ -z "$notes" ]; then
+            notes='- Version and packaging metadata update only.'
+          fi
+
+          {
+            echo "body<<EOF"
+            echo "$heading"
+            echo
+            echo "$notes"
+            echo
+            echo "Assets:"
+            echo "- Windows portable EXE"
+            echo "- macOS universal DMG"
+            echo "EOF"
+          } >> "$GITHUB_OUTPUT"
 
       - name: Set up Node.js
         uses: actions/setup-node@v6
@@ -74,12 +111,7 @@ jobs:
         with:
           tagName: ${{ steps.version.outputs.release_tag }}
           releaseName: TaskTracker Extreme 3000 ${{ steps.version.outputs.release_tag }}
-          releaseBody: |
-            Automated build from GitHub Actions after a version bump on `main`.
-
-            Assets:
-            - Windows portable EXE
-            - macOS universal DMG
+          releaseBody: ${{ steps.notes.outputs.body }}
           releaseDraft: false
           prerelease: false
           args: ${{ matrix.tauri_args }}
