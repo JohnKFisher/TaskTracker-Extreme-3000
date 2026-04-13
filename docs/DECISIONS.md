@@ -67,3 +67,7 @@ Status: approved
 ## 2026-04-13 — Use revisioned shared JSON with watcher-driven refresh and conservative merge behavior
 Rationale: The shared-folder workflow now needs to tolerate two machines running at once, so the app adds document revisions, file watching, periodic reconciliation, merge-safe task/hidden-ticket saves, and one-time legacy-path import when a new sync folder is chosen. This favors convergence and visible warnings over silent overwrites.
 Status: approved
+
+## 2026-04-13 — On first rebuilt launch, import legacy local shared data without auto-adopting old sync paths
+Rationale: The first Windows launch after the rebuild should recover old tasks and config automatically when legacy local data exists, but it should do so conservatively by importing into the new local app-data location rather than silently repointing the app at an old synced folder. This reduces surprise and preserves explicit sync-folder choice.
+Status: approved

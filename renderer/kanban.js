@@ -9,6 +9,9 @@ let taskDocumentState = {
 let taskStorageWritable = true;
 let tasksDirty = false;
 let pendingRemoteTaskReload = false;
+let taskSaveInFlight = false;
+let dragInProgress = false;
+let activeDropColumn = null;
 const COLUMNS = ['standing', 'priority', 'inprogress', 'todo', 'rainyday', 'done'];
 
 function taskDocument() {
@@ -34,6 +37,21 @@ function applyTaskDocument(document) {
 
 function markTasksDirty() {
   tasksDirty = true;
+}
+
+function setDraggingState(active) {
+  dragInProgress = active;
+  document.body.classList.toggle('kanban-dragging', active);
+  if (!active) {
+    setActiveDropColumn(null);
+  }
+}
+
+function setActiveDropColumn(column) {
+  activeDropColumn = column;
+  document.querySelectorAll('.kanban-section').forEach((section) => {
+    section.classList.toggle('drop-target', column !== null && section.dataset.column === column);
+  });
 }
 
 function isTaskStorageWritable() {
@@ -95,6 +113,7 @@ async function loadTasks(options = {}) {
 async function persistTasks() {
   if (!isTaskStorageWritable() || !tasksDirty) return;
 
+  taskSaveInFlight = true;
   try {
     const result = await window.callCommand('save_tasks', { document: taskDocument() });
     applyTaskDocument(result.document);
@@ -115,6 +134,8 @@ async function persistTasks() {
     console.error('Failed to save tasks:', error);
     await window.refreshStorageStatus();
     await loadTasks({ silent: true });
+  } finally {
+    taskSaveInFlight = false;
   }
 }
 
@@ -321,11 +342,22 @@ COLUMNS.forEach((column) => {
   Sortable.create(element, {
     group: 'kanban',
     animation: 150,
+    emptyInsertThreshold: 36,
     ghostClass: 'sortable-ghost',
     chosenClass: 'sortable-chosen',
     dragClass: 'sortable-drag',
+    onStart: () => {
+      setDraggingState(true);
+      setActiveDropColumn(column);
+    },
+    onMove: (event) => {
+      const nextColumn = event.to && event.to.dataset ? event.to.dataset.column : null;
+      setActiveDropColumn(nextColumn);
+      return true;
+    },
     onEnd: async (event) => {
       if (!isTaskStorageWritable()) {
+        setDraggingState(false);
         await loadTasks({ silent: true });
         return;
       }
@@ -343,6 +375,7 @@ COLUMNS.forEach((column) => {
       [event.from.dataset.column, newColumn].forEach((col) => alphaSortColumn(col));
       saveTasks();
       renderAllColumns();
+      setDraggingState(false);
     },
   });
 });
@@ -398,7 +431,7 @@ window.addEventListener('shared-data-changed', async (event) => {
   const files = event.detail && Array.isArray(event.detail.files) ? event.detail.files : [];
   if (!files.includes('tasks.json')) return;
 
-  if (tasksDirty) {
+  if (tasksDirty || dragInProgress || taskSaveInFlight) {
     pendingRemoteTaskReload = true;
     return;
   }
@@ -407,7 +440,7 @@ window.addEventListener('shared-data-changed', async (event) => {
 });
 
 window.addEventListener('shared-data-reconcile', async () => {
-  if (!tasksDirty) {
+  if (!tasksDirty && !dragInProgress && !taskSaveInFlight) {
     await loadTasks({ silent: true });
   }
 });
