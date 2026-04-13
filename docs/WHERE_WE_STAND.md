@@ -5,11 +5,11 @@ TaskTracker Extreme 3000
 
 ## Current Version / Build
 - Version source of truth: `version.json`
-- Current marketing version: `2.1.3`
-- Current build number: `8`
+- Current marketing version: `2.2.0`
+- Current build number: `9`
 
 ## Overall Status
-Working personal-use Tauri desktop app with a revisioned local/shared JSON data model, secure Desk365 credential storage, explicit shared-storage status reporting, and a checked-in deterministic version/build workflow. Shared task data now watches for cross-machine changes, reconciles periodically, merges common task/hidden-ticket collisions conservatively, and can import legacy data into a newly chosen sync folder. The repo is still at version `2.1.3` / build `8`, with passing local version-script checks and Rust unit tests after the multi-machine sync hardening pass.
+Working personal-use Tauri desktop app with a revisioned local/shared JSON data model, secure Desk365 credential storage, explicit shared-storage status reporting, and a checked-in deterministic version/build workflow. Shared task data now watches for cross-machine changes, reconciles periodically, merges common task/hidden-ticket collisions conservatively, and can import legacy data into a newly chosen sync folder. The repo is now at version `2.2.0` / build `9`, with passing local version-script checks and Rust unit tests after the multi-machine sync hardening pass.
 
 ## What Works Now
 - Sidebar desktop window with tray behavior, global shortcuts, and a quick-add window
