@@ -299,7 +299,7 @@ async function performInitializeTickets() {
 
   if (ticketState.desk365Domain && ticketState.hasApiKey && storageAvailable) {
     setTicketSetupVisible(false);
-    await fetchAndRenderTickets();
+    await fetchAndRenderTickets({ force: true });
     startPolling();
   } else {
     currentTickets = [];

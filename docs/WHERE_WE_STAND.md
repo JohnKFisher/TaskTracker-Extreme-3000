@@ -5,11 +5,11 @@ TaskTracker Extreme 3000
 
 ## Current Version / Build
 - Version source of truth: `version.json`
-- Current marketing version: `2.2.2`
-- Current build number: `11`
+- Current marketing version: `2.2.3`
+- Current build number: `12`
 
 ## Overall Status
-Working personal-use Tauri desktop app with a revisioned local/shared JSON data model, secure Desk365 credential storage, explicit shared-storage status reporting, and a checked-in deterministic version/build workflow. Shared task data now watches for cross-machine changes, reconciles periodically, merges common task/hidden-ticket collisions conservatively, can import legacy data into a newly chosen sync folder, and on first rebuilt launch can pull older local Windows/Electron task files into the current app-data location. The current follow-up passes also add manual legacy import controls in Settings, recover missing sync-folder settings from older `local-settings.json` files, normalize dialog-picked storage paths more defensively on Windows, keep hidden-ticket save failures from forcing a full Desk365 reload, and verify secure API-key writes immediately after saving them. The repo is now at version `2.2.2` / build `11`.
+Working personal-use Tauri desktop app with a revisioned local/shared JSON data model, secure Desk365 credential storage, explicit shared-storage status reporting, and a checked-in deterministic version/build workflow. Shared task data now watches for cross-machine changes, reconciles periodically, merges common task/hidden-ticket collisions conservatively, can import legacy data into a newly chosen sync folder, and on first rebuilt launch can pull older local Windows/Electron task files into the current app-data location. The current follow-up passes also add manual legacy import controls in Settings, recover missing sync-folder settings from older `local-settings.json` files, normalize dialog-picked storage paths more defensively on Windows, keep hidden-ticket save failures from forcing a full Desk365 reload, verify secure API-key writes immediately after saving them, import only the explicitly chosen legacy JSON file, and queue ticket initialization fetches in a way that avoids both silent skips and Desk365 short-window rate limits. The repo is now at version `2.2.3` / build `12`.
 
 ## What Works Now
 - Sidebar desktop window with tray behavior, global shortcuts, and a quick-add window

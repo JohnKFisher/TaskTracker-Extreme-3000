@@ -1068,6 +1068,44 @@ fn directory_contains_populated_shared_data(path: &Path) -> bool {
     })
 }
 
+fn should_copy_shared_file(source_path: &Path, destination_path: &Path) -> bool {
+    if !destination_path.exists() {
+        return true;
+    }
+
+    if !fs::metadata(destination_path)
+        .map(|metadata| metadata.len() > 0)
+        .unwrap_or(false)
+    {
+        return true;
+    }
+
+    shared_file_modified_time(source_path) > shared_file_modified_time(destination_path)
+}
+
+fn copy_single_shared_data_file(
+    source_path: &Path,
+    destination_path: &Path,
+) -> Result<bool, AppError> {
+    if !source_path.is_file() {
+        return Ok(false);
+    }
+
+    if !should_copy_shared_file(source_path, destination_path) {
+        return Ok(false);
+    }
+
+    fs::copy(source_path, destination_path).map_err(|err| AppError {
+        code: "write_failed".to_string(),
+        message: format!(
+            "Could not copy {} into {}: {err}",
+            source_path.display(),
+            destination_path.display()
+        ),
+    })?;
+    Ok(true)
+}
+
 fn copy_shared_data_from_source(source: &Path, destination: &Path) -> Result<Vec<String>, AppError> {
     let mut copied_files = Vec::new();
     for filename in SHARED_DATA_FILES {
@@ -1077,26 +1115,7 @@ fn copy_shared_data_from_source(source: &Path, destination: &Path) -> Result<Vec
         }
 
         let destination_path = destination.join(filename);
-        let should_copy = if !destination_path.exists() {
-            true
-        } else if !fs::metadata(&destination_path)
-            .map(|metadata| metadata.len() > 0)
-            .unwrap_or(false)
-        {
-            true
-        } else {
-            shared_file_modified_time(&source_path) > shared_file_modified_time(&destination_path)
-        };
-
-        if should_copy {
-            fs::copy(&source_path, &destination_path).map_err(|err| AppError {
-                code: "write_failed".to_string(),
-                message: format!(
-                    "Could not copy {} into {}: {err}",
-                    source_path.display(),
-                    destination_path.display()
-                ),
-            })?;
+        if copy_single_shared_data_file(&source_path, &destination_path)? {
             copied_files.push(filename.to_string());
         }
     }
@@ -1256,6 +1275,9 @@ fn select_legacy_local_settings_source(
         .filter_map(|path| {
             let settings = read_local_settings_from_path(&path).ok()?;
             let sync_folder = normalize_sync_folder(settings.sync_folder.clone())?;
+            if !Path::new(&sync_folder).is_dir() {
+                return None;
+            }
             let modified = shared_file_modified_time(&path);
             Some((path, sync_folder, modified))
         })
@@ -1381,6 +1403,44 @@ fn import_shared_data_from_source_dir(
             "Imported {} shared-data file{} from {}.",
             copied_files.len(),
             if copied_files.len() == 1 { "" } else { "s" },
+            source.display()
+        )))
+    }
+}
+
+fn import_shared_data_from_source_path(
+    source: &Path,
+    destination: &Path,
+) -> Result<Option<String>, AppError> {
+    if source.is_dir() {
+        return import_shared_data_from_source_dir(source, destination);
+    }
+
+    let Some(filename) = source.file_name().and_then(|entry| entry.to_str()) else {
+        return Err(AppError {
+            code: "invalid_import_source".to_string(),
+            message: format!("Could not use {} as an import source.", source.display()),
+        });
+    };
+
+    if !SHARED_DATA_FILES.contains(&filename) {
+        return Err(AppError {
+            code: "invalid_import_source".to_string(),
+            message: format!(
+                "{} is not a supported shared-data file. Choose tasks.json, notes.json, config.json, hidden-tickets.json, or local-settings.json.",
+                source.display()
+            ),
+        });
+    }
+
+    let destination_path = destination.join(filename);
+    let copied = copy_single_shared_data_file(source, &destination_path)?;
+    if copied {
+        Ok(Some(format!("Imported {} into {}.", source.display(), destination.display())))
+    } else {
+        Ok(Some(format!(
+            "Kept the current {} because it was already newer than {}.",
+            filename,
             source.display()
         )))
     }
@@ -2246,25 +2306,12 @@ fn attempt_legacy_import_from_path_cmd(
         });
         return CommandResponse::ok(status);
     } else {
-        let source_dir = if selected_path.is_dir() {
-            selected_path.clone()
-        } else {
-            match selected_path.parent() {
-                Some(parent) => parent.to_path_buf(),
-                None => {
-                    return CommandResponse::err(
-                        "invalid_import_source",
-                        format!("Could not use {} as an import source.", selected_path.display()),
-                    )
-                }
-            }
-        };
         let destination = match shared_data_dir(&previous_settings, &app) {
             Ok(path) => path,
             Err(err) => return CommandResponse::err(&err.code, err.message),
         };
 
-        match import_shared_data_from_source_dir(&source_dir, &destination) {
+        match import_shared_data_from_source_path(&selected_path, &destination) {
             Ok(notice) => notice,
             Err(err) => return CommandResponse::err(&err.code, err.message),
         }
