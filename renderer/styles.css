@@ -507,6 +507,12 @@ body.kanban-dragging .task-list {
   opacity: 0.65;
 }
 
+.sortable-fallback {
+  margin: 0;
+  transform: none !important;
+  box-shadow: var(--shadow);
+}
+
 #add-task-bar {
   display: grid;
   grid-template-columns: 1fr 112px 42px 64px;
