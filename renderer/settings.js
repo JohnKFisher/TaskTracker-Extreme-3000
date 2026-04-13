@@ -1,3 +1,5 @@
+let currentLocalSettings = null;
+
 async function initSettings() {
   await refreshLocalSettingsDisplay();
 
@@ -6,14 +8,43 @@ async function initSettings() {
   renderAbout(window.appMetadata);
 }
 
+async function loadCurrentLocalSettings() {
+  currentLocalSettings = await window.callCommand('load_local_settings_cmd');
+  return currentLocalSettings;
+}
+
+function applyLocalSettings(settings) {
+  currentLocalSettings = settings;
+  updateSyncFolderDisplay(settings.syncFolder || null);
+  updatePersonalTabToggle(Boolean(settings.showPersonalTab));
+  if (typeof window.applyPersonalTabVisibility === 'function') {
+    window.applyPersonalTabVisibility(Boolean(settings.showPersonalTab));
+  }
+}
+
 async function refreshLocalSettingsDisplay() {
   try {
-    const settings = await window.callCommand('load_local_settings_cmd');
-    updateSyncFolderDisplay(settings.syncFolder || null);
+    const settings = await loadCurrentLocalSettings();
+    applyLocalSettings(settings);
   } catch (error) {
     console.error('Failed to load local settings:', error);
     renderSyncFolderNotice(error.message || 'Could not load local settings.', 'danger');
   }
+}
+
+async function saveLocalSettingsPatch(patch) {
+  const current = currentLocalSettings || await loadCurrentLocalSettings();
+  const nextSettings = {
+    ...current,
+    ...patch,
+  };
+
+  const status = await window.callCommand('save_local_settings_cmd', {
+    settings: nextSettings,
+  });
+
+  applyLocalSettings(nextSettings);
+  return status;
 }
 
 function updateSyncFolderDisplay(folder) {
@@ -29,6 +60,11 @@ function updateSyncFolderDisplay(folder) {
     display.title = '';
     clearBtn.classList.add('hidden');
   }
+}
+
+function updatePersonalTabToggle(visible) {
+  const toggle = document.getElementById('toggle-personal-tab');
+  toggle.checked = visible;
 }
 
 function renderStorageStatus(status) {
@@ -95,10 +131,7 @@ document.getElementById('btn-browse-sync-folder').addEventListener('click', asyn
     const folder = await window.callCommand('pick_sync_folder');
     if (!folder) return;
 
-    const status = await window.callCommand('save_local_settings_cmd', {
-      settings: { syncFolder: folder },
-    });
-
+    const status = await saveLocalSettingsPatch({ syncFolder: folder });
     updateSyncFolderDisplay(folder);
     await applyStorageStatusResult(status);
   } catch (error) {
@@ -112,15 +145,22 @@ document.getElementById('btn-clear-sync-folder').addEventListener('click', async
   if (!confirmed) return;
 
   try {
-    const status = await window.callCommand('save_local_settings_cmd', {
-      settings: { syncFolder: null },
-    });
-
+    const status = await saveLocalSettingsPatch({ syncFolder: null });
     updateSyncFolderDisplay(null);
     await applyStorageStatusResult(status);
   } catch (error) {
     console.error('Failed to clear sync folder:', error);
     renderSyncFolderNotice(error.message || 'Could not clear the sync folder.', 'danger');
+  }
+});
+
+document.getElementById('toggle-personal-tab').addEventListener('change', async (event) => {
+  try {
+    await saveLocalSettingsPatch({ showPersonalTab: event.target.checked });
+  } catch (error) {
+    console.error('Failed to save personal tab visibility:', error);
+    event.target.checked = !event.target.checked;
+    renderSyncFolderNotice(error.message || 'Could not update the Personal tab setting.', 'danger');
   }
 });
 

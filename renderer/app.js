@@ -9,6 +9,7 @@ let quitInProgress = false;
 let currentAppNotice = null;
 let noticeTimer = null;
 let reconcileTimer = null;
+let currentActiveTab = 'tasks';
 
 window.currentStorageStatus = null;
 window.appMetadata = null;
@@ -97,6 +98,7 @@ window.clearAppNotice = function clearAppNotice() {
 };
 
 function setActiveTab(tabName, section) {
+  currentActiveTab = tabName;
   document.querySelectorAll('.tab').forEach((tab) => {
     const active = tab.dataset.tab === tabName;
     tab.classList.toggle('active', active);
@@ -114,6 +116,22 @@ function setActiveTab(tabName, section) {
 }
 
 window.setActiveTab = setActiveTab;
+window.getActiveTabName = function getActiveTabName() {
+  return currentActiveTab;
+};
+
+window.applyPersonalTabVisibility = function applyPersonalTabVisibility(visible) {
+  const personalTab = document.querySelector('.tab[data-tab="personal"]');
+  const personalPanel = document.getElementById('tab-personal');
+  if (!personalTab || !personalPanel) return;
+
+  personalTab.classList.toggle('hidden', !visible);
+  personalPanel.classList.toggle('hidden', !visible);
+
+  if (!visible && currentActiveTab === 'personal') {
+    setActiveTab('tasks');
+  }
+};
 
 function renderStorageBanner(status) {
   window.currentStorageStatus = status;

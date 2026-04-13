@@ -83,3 +83,7 @@ Status: approved
 ## 2026-04-13 — Normalize picked storage paths and allow explicit legacy-file import
 Rationale: Windows storage bugs showed that relying only on automatic legacy scanning and raw dialog path strings was too brittle. The app now normalizes dialog-picked filesystem paths, recovers missing sync-folder settings from legacy `local-settings.json`, and lets the owner explicitly import an older task/settings JSON file when needed.
 Status: approved
+
+## 2026-04-13 — Split task boards into Work and optional Personal views
+Rationale: The existing kanban remains the work board, but a second Personal board with the same layout is now supported in the same shared task document via a per-task `board` field. Personal-tab visibility is machine-local through local settings so each machine can choose whether to surface it without changing synced shared data.
+Status: approved

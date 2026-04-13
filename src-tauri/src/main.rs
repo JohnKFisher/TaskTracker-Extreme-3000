@@ -80,6 +80,8 @@ struct LocalSettings {
     #[serde(default)]
     sync_folder: Option<String>,
     #[serde(default)]
+    show_personal_tab: bool,
+    #[serde(default)]
     device_id: Option<String>,
     #[serde(default)]
     startup_legacy_import_done: bool,
@@ -97,6 +99,8 @@ struct TaskItem {
     column: String,
     #[serde(default)]
     order: i64,
+    #[serde(default = "default_task_board")]
+    board: String,
     #[serde(default)]
     created_at: Option<String>,
     #[serde(default)]
@@ -322,6 +326,10 @@ fn ticket_settings_schema_version() -> u32 {
     3
 }
 
+fn default_task_board() -> String {
+    "work".to_string()
+}
+
 trait CredentialStore {
     fn get_api_key(&self) -> Result<Option<String>, AppError>;
     fn set_api_key(&self, api_key: &str) -> Result<(), AppError>;
@@ -421,6 +429,18 @@ fn normalize_local_settings(mut settings: LocalSettings) -> LocalSettings {
         settings.device_id = Some(generate_device_id());
     }
     settings
+}
+
+fn normalize_task_board(value: Option<String>) -> String {
+    match value
+        .as_deref()
+        .map(str::trim)
+        .filter(|entry| !entry.is_empty())
+        .unwrap_or("work")
+    {
+        "personal" => "personal".to_string(),
+        _ => "work".to_string(),
+    }
 }
 
 fn merge_missing_sync_folder(current: &LocalSettings, imported: &LocalSettings) -> LocalSettings {
@@ -583,10 +603,7 @@ fn temp_file_path(path: &Path) -> PathBuf {
         .file_name()
         .and_then(|entry| entry.to_str())
         .unwrap_or("shared-data.json");
-    path.with_file_name(format!(
-        ".{file_name}.tmp-{}-{stamp}",
-        std::process::id()
-    ))
+    path.with_file_name(format!(".{file_name}.tmp-{}-{stamp}", std::process::id()))
 }
 
 fn write_json_file<T: Serialize>(path: &Path, data: &T) -> Result<(), AppError> {
@@ -620,7 +637,10 @@ fn write_json_file<T: Serialize>(path: &Path, data: &T) -> Result<(), AppError> 
             ));
             fs::rename(path, &backup_path).map_err(|err| AppError {
                 code: "write_failed".to_string(),
-                message: format!("Could not prepare {} for replacement: {err}", path.display()),
+                message: format!(
+                    "Could not prepare {} for replacement: {err}",
+                    path.display()
+                ),
             })?;
 
             if let Err(err) = fs::rename(&temp_path, path) {
@@ -677,6 +697,7 @@ fn parse_task_item_value(value: &Value, index: usize) -> Option<TaskItem> {
         .get("order")
         .and_then(Value::as_i64)
         .unwrap_or(index as i64);
+    let board = normalize_task_board(string_field(value, &["board"]));
     let created_at = string_field(value, &["createdAt", "created_at"]);
     let updated_at = string_field(value, &["updatedAt", "updated_at"]);
 
@@ -686,6 +707,7 @@ fn parse_task_item_value(value: &Value, index: usize) -> Option<TaskItem> {
         notes,
         column,
         order,
+        board,
         created_at,
         updated_at,
     })
@@ -763,6 +785,7 @@ fn normalize_task_document(mut document: TaskDocument) -> TaskDocument {
         .unwrap_or_else(current_iso_timestamp);
 
     for task in &mut document.tasks {
+        task.board = normalize_task_board(Some(task.board.clone()));
         if task.created_at.as_deref().unwrap_or("").is_empty() {
             task.created_at = Some(default_task_timestamp(task, &fallback));
         }
@@ -832,12 +855,9 @@ fn normalize_hidden_tickets_document(mut document: HiddenTicketsDocument) -> Hid
 
 fn parse_hidden_ticket_state_value(value: &Value, fallback: &str) -> Option<HiddenTicketState> {
     let ticket_number = string_field(value, &["ticketNumber", "ticket_number", "id"])?;
-    let hidden = value
-        .get("hidden")
-        .and_then(Value::as_bool)
-        .unwrap_or(true);
-    let updated_at = string_field(value, &["updatedAt", "updated_at"])
-        .unwrap_or_else(|| fallback.to_string());
+    let hidden = value.get("hidden").and_then(Value::as_bool).unwrap_or(true);
+    let updated_at =
+        string_field(value, &["updatedAt", "updated_at"]).unwrap_or_else(|| fallback.to_string());
 
     Some(HiddenTicketState {
         ticket_number,
@@ -1150,7 +1170,10 @@ fn directory_shared_data_score(path: &Path) -> (usize, u64) {
 fn directory_contains_populated_shared_data(path: &Path) -> bool {
     SHARED_DATA_FILES.iter().any(|filename| {
         let candidate = path.join(filename);
-        candidate.is_file() && fs::metadata(candidate).map(|metadata| metadata.len() > 0).unwrap_or(false)
+        candidate.is_file()
+            && fs::metadata(candidate)
+                .map(|metadata| metadata.len() > 0)
+                .unwrap_or(false)
     })
 }
 
@@ -1192,7 +1215,10 @@ fn copy_single_shared_data_file(
     Ok(true)
 }
 
-fn copy_shared_data_from_source(source: &Path, destination: &Path) -> Result<Vec<String>, AppError> {
+fn copy_shared_data_from_source(
+    source: &Path,
+    destination: &Path,
+) -> Result<Vec<String>, AppError> {
     let mut copied_files = Vec::new();
     for filename in SHARED_DATA_FILES {
         let source_path = source.join(filename);
@@ -1467,7 +1493,10 @@ fn import_shared_data_from_source_dir(
     if !source.is_dir() {
         return Err(AppError {
             code: "invalid_import_source".to_string(),
-            message: format!("{} is not a folder containing shared data.", source.display()),
+            message: format!(
+                "{} is not a folder containing shared data.",
+                source.display()
+            ),
         });
     }
 
@@ -1522,7 +1551,11 @@ fn import_shared_data_from_source_path(
     let destination_path = destination.join(filename);
     let copied = copy_single_shared_data_file(source, &destination_path)?;
     if copied {
-        Ok(Some(format!("Imported {} into {}.", source.display(), destination.display())))
+        Ok(Some(format!(
+            "Imported {} into {}.",
+            source.display(),
+            destination.display()
+        )))
     } else {
         Ok(Some(format!(
             "Kept the current {} because it was already newer than {}.",
@@ -1541,6 +1574,10 @@ fn choose_latest_task(left: &TaskItem, right: &TaskItem) -> TaskItem {
 }
 
 fn normalize_task_orders(tasks: &mut Vec<TaskItem>) {
+    let board_rank = |board: &str| match board {
+        "personal" => 0,
+        _ => 1,
+    };
     let column_rank = |column: &str| match column {
         "standing" => 0,
         "priority" => 1,
@@ -1551,17 +1588,20 @@ fn normalize_task_orders(tasks: &mut Vec<TaskItem>) {
         _ => 6,
     };
 
-    let mut buckets: BTreeMap<String, Vec<TaskItem>> = BTreeMap::new();
+    let mut buckets: BTreeMap<(String, String), Vec<TaskItem>> = BTreeMap::new();
     for task in tasks.drain(..) {
-        buckets.entry(task.column.clone()).or_default().push(task);
+        buckets
+            .entry((task.board.clone(), task.column.clone()))
+            .or_default()
+            .push(task);
     }
 
     let mut normalized = Vec::new();
-    let mut ordered_columns: Vec<String> = buckets.keys().cloned().collect();
-    ordered_columns.sort_by_key(|column| column_rank(column));
+    let mut ordered_buckets: Vec<(String, String)> = buckets.keys().cloned().collect();
+    ordered_buckets.sort_by_key(|(board, column)| (board_rank(board), column_rank(column)));
 
-    for column in ordered_columns {
-        if let Some(mut entries) = buckets.remove(&column) {
+    for bucket_key in ordered_buckets {
+        if let Some(mut entries) = buckets.remove(&bucket_key) {
             entries.sort_by(|left, right| {
                 left.order
                     .cmp(&right.order)
@@ -1643,7 +1683,10 @@ fn merge_task_documents(
 
         let tombstone_wins = tombstone
             .map(|entry| {
-                entry.updated_at >= chosen_task_timestamp.clone().unwrap_or_else(|| "".to_string())
+                entry.updated_at
+                    >= chosen_task_timestamp
+                        .clone()
+                        .unwrap_or_else(|| "".to_string())
             })
             .unwrap_or(false);
 
@@ -2272,14 +2315,11 @@ fn save_local_settings_cmd(
 
     *state.local_settings.lock().unwrap() = normalized_settings.clone();
 
-    let migration_notice = match migrate_shared_data_if_needed(
-        &previous_settings,
-        &normalized_settings,
-        &app,
-    ) {
-        Ok(notice) => notice,
-        Err(err) => Some(err.message),
-    };
+    let migration_notice =
+        match migrate_shared_data_if_needed(&previous_settings, &normalized_settings, &app) {
+            Ok(notice) => notice,
+            Err(err) => Some(err.message),
+        };
 
     let migration_result =
         migrate_legacy_ticket_secret_if_needed(&normalized_settings, &app, &KeyringCredentialStore);
@@ -2307,11 +2347,11 @@ fn attempt_legacy_import_cmd(
         Err(err) => return CommandResponse::err(&err.code, err.message),
     };
 
-    let import_notice = match import_legacy_shared_data_into_destination(&settings, &destination, &app)
-    {
-        Ok(notice) => notice,
-        Err(err) => return CommandResponse::err(&err.code, err.message),
-    };
+    let import_notice =
+        match import_legacy_shared_data_into_destination(&settings, &destination, &app) {
+            Ok(notice) => notice,
+            Err(err) => return CommandResponse::err(&err.code, err.message),
+        };
 
     let migration_result =
         migrate_legacy_ticket_secret_if_needed(&settings, &app, &KeyringCredentialStore);
@@ -2335,9 +2375,7 @@ fn attempt_legacy_import_from_path_cmd(
     let selected_path = PathBuf::from(normalize_path_value(&path));
     let previous_settings = state.local_settings.lock().unwrap().clone();
 
-    let notice = if selected_path
-        .file_name()
-        .and_then(|entry| entry.to_str())
+    let notice = if selected_path.file_name().and_then(|entry| entry.to_str())
         == Some(LOCAL_SETTINGS_FILE)
     {
         let imported = match read_local_settings_from_path(&selected_path) {
@@ -2632,10 +2670,11 @@ fn quick_add_task(title: String, state: State<AppState>, app: AppHandle) -> Comm
         Err(err) => return CommandResponse::err(&err.code, err.message),
     };
 
+    let board = default_task_board();
     let next_order = latest
         .tasks
         .iter()
-        .filter(|task| task.column == "todo")
+        .filter(|task| task.column == "todo" && task.board == board)
         .count() as i64;
     let now = current_iso_timestamp();
     latest.tasks.push(TaskItem {
@@ -2650,6 +2689,7 @@ fn quick_add_task(title: String, state: State<AppState>, app: AppHandle) -> Comm
         notes: String::new(),
         column: "todo".to_string(),
         order: next_order,
+        board,
         created_at: Some(now.clone()),
         updated_at: Some(now.clone()),
     });
@@ -2761,16 +2801,15 @@ fn main() {
             #[cfg(target_os = "macos")]
             app.set_activation_policy(tauri::ActivationPolicy::Accessory);
 
-            let initial_local_settings =
-                read_local_settings(app.handle()).unwrap_or_else(|_| {
-                    normalize_local_settings(LocalSettings::default())
-                });
+            let initial_local_settings = read_local_settings(app.handle())
+                .unwrap_or_else(|_| normalize_local_settings(LocalSettings::default()));
             let (mut local_settings, legacy_local_settings_notice) =
                 import_legacy_local_settings_if_needed(&initial_local_settings, app.handle())
                     .unwrap_or((initial_local_settings, None));
-            let startup_import_notice = run_startup_legacy_import(&mut local_settings, app.handle())
-                .ok()
-                .flatten();
+            let startup_import_notice =
+                run_startup_legacy_import(&mut local_settings, app.handle())
+                    .ok()
+                    .flatten();
             let _ = save_local_settings(&local_settings, app.handle());
 
             let migration_result = migrate_legacy_ticket_secret_if_needed(
@@ -2879,13 +2918,13 @@ fn main() {
 mod tests {
     use super::{
         compare_timestamps, compute_storage_status_from_local_dir, copy_shared_data_from_source,
-        generate_device_id, hidden_ticket_schema_version, is_valid_hostname,
-        merge_missing_sync_folder, normalize_path_value,
-        merge_hidden_tickets_documents, merge_task_documents, migrate_legacy_secret_value,
-        normalize_hidden_tickets_document, normalize_local_settings, normalize_task_document,
-        parse_hidden_tickets_document_content, parse_task_document_content, AppError,
-        CredentialStore, HiddenTicketState, HiddenTicketsDocument, LocalSettings, TaskDocument,
-        TaskItem, TaskTombstone,
+        default_task_board, generate_device_id, hidden_ticket_schema_version, is_valid_hostname,
+        merge_hidden_tickets_documents, merge_missing_sync_folder, merge_task_documents,
+        migrate_legacy_secret_value, normalize_hidden_tickets_document, normalize_local_settings,
+        normalize_path_value, normalize_task_document, normalize_task_orders,
+        parse_hidden_tickets_document_content, parse_task_document_content, parse_task_item_value,
+        AppError, CredentialStore, HiddenTicketState, HiddenTicketsDocument, LocalSettings,
+        TaskDocument, TaskItem, TaskTombstone,
     };
     use serde_json::json;
     use std::cmp::Ordering;
@@ -2929,6 +2968,7 @@ mod tests {
             notes: String::new(),
             column: "todo".to_string(),
             order: 0,
+            board: default_task_board(),
             created_at: Some(updated_at.to_string()),
             updated_at: Some(updated_at.to_string()),
         }
@@ -2981,6 +3021,7 @@ mod tests {
             Ok(PathBuf::from(std::env::temp_dir())),
             &LocalSettings {
                 sync_folder: Some(missing_sync.display().to_string()),
+                show_personal_tab: false,
                 device_id: Some(generate_device_id()),
                 startup_legacy_import_done: false,
             },
@@ -3008,30 +3049,87 @@ mod tests {
     fn normalizes_local_settings_with_device_id() {
         let normalized = normalize_local_settings(LocalSettings {
             sync_folder: Some("   ".to_string()),
+            show_personal_tab: true,
             device_id: None,
             startup_legacy_import_done: false,
         });
         assert!(normalized.sync_folder.is_none());
         assert!(normalized.device_id.is_some());
+        assert!(normalized.show_personal_tab);
     }
 
     #[test]
     fn merges_missing_sync_folder_from_imported_local_settings() {
         let current = normalize_local_settings(LocalSettings {
             sync_folder: None,
+            show_personal_tab: false,
             device_id: Some("device-a".to_string()),
             startup_legacy_import_done: true,
         });
         let imported = normalize_local_settings(LocalSettings {
             sync_folder: Some("C:\\Sync\\TaskTracker".to_string()),
+            show_personal_tab: true,
             device_id: Some("device-b".to_string()),
             startup_legacy_import_done: false,
         });
 
         let merged = merge_missing_sync_folder(&current, &imported);
-        assert_eq!(merged.sync_folder, Some("C:\\Sync\\TaskTracker".to_string()));
+        assert_eq!(
+            merged.sync_folder,
+            Some("C:\\Sync\\TaskTracker".to_string())
+        );
         assert_eq!(merged.device_id, current.device_id);
+        assert!(!merged.show_personal_tab);
         assert!(merged.startup_legacy_import_done);
+    }
+
+    #[test]
+    fn normalizes_unknown_task_boards_to_work() {
+        let parsed = parse_task_item_value(
+            &json!({
+                "id": "task-1",
+                "title": "Check board",
+                "column": "todo",
+                "board": "anything-else"
+            }),
+            0,
+        )
+        .unwrap();
+
+        assert_eq!(parsed.board, "work");
+    }
+
+    #[test]
+    fn normalizes_task_orders_per_board_and_column() {
+        let mut tasks = vec![
+            TaskItem {
+                id: "w-1".to_string(),
+                title: "Work".to_string(),
+                notes: String::new(),
+                column: "todo".to_string(),
+                order: 99,
+                board: "work".to_string(),
+                created_at: None,
+                updated_at: Some("2026-04-13T10:00:00Z".to_string()),
+            },
+            TaskItem {
+                id: "p-1".to_string(),
+                title: "Personal".to_string(),
+                notes: String::new(),
+                column: "todo".to_string(),
+                order: 77,
+                board: "personal".to_string(),
+                created_at: None,
+                updated_at: Some("2026-04-13T10:00:01Z".to_string()),
+            },
+        ];
+
+        normalize_task_orders(&mut tasks);
+
+        let work = tasks.iter().find(|task| task.id == "w-1").unwrap();
+        let personal = tasks.iter().find(|task| task.id == "p-1").unwrap();
+        assert_eq!(work.order, 0);
+        assert_eq!(personal.order, 0);
     }
 
     #[cfg(target_os = "windows")]
@@ -3055,13 +3153,12 @@ mod tests {
     #[test]
     fn parses_raw_hidden_ticket_array_content() {
         let path = PathBuf::from("hidden-tickets.json");
-        let document = parse_hidden_tickets_document_content(
-            &path,
-            r#"["1001","1002"]"#,
-        )
-        .unwrap();
+        let document = parse_hidden_tickets_document_content(&path, r#"["1001","1002"]"#).unwrap();
 
-        assert_eq!(document.tickets, vec!["1001".to_string(), "1002".to_string()]);
+        assert_eq!(
+            document.tickets,
+            vec!["1001".to_string(), "1002".to_string()]
+        );
         assert_eq!(document.states.len(), 2);
         assert!(document.states.iter().all(|state| state.hidden));
     }
@@ -3091,7 +3188,10 @@ mod tests {
         let (merged, conflicts) = merge_task_documents(&latest, &incoming, "device-c");
         assert_eq!(merged.revision, 6);
         assert_eq!(merged.tasks.len(), 2);
-        assert!(merged.tasks.iter().any(|entry| entry.id == "1" && entry.title == "Latest"));
+        assert!(merged
+            .tasks
+            .iter()
+            .any(|entry| entry.id == "1" && entry.title == "Latest"));
         assert!(merged.tasks.iter().any(|entry| entry.id == "2"));
         assert_eq!(conflicts, vec!["1".to_string()]);
     }
@@ -3241,8 +3341,16 @@ mod tests {
         let destination = root.join("destination");
         fs::create_dir_all(&source).unwrap();
         fs::create_dir_all(&destination).unwrap();
-        fs::write(source.join("tasks.json"), r#"{"schemaVersion":1,"tasks":[{"id":"t1","title":"Legacy"}]}"#).unwrap();
-        fs::write(source.join("config.json"), r#"{"desk365Domain":"example.desk365.io"}"#).unwrap();
+        fs::write(
+            source.join("tasks.json"),
+            r#"{"schemaVersion":1,"tasks":[{"id":"t1","title":"Legacy"}]}"#,
+        )
+        .unwrap();
+        fs::write(
+            source.join("config.json"),
+            r#"{"desk365Domain":"example.desk365.io"}"#,
+        )
+        .unwrap();
 
         let copied = copy_shared_data_from_source(&source, &destination).unwrap();
         assert_eq!(copied.len(), 2);
@@ -3263,8 +3371,16 @@ mod tests {
         let destination = root.join("destination");
         fs::create_dir_all(&source).unwrap();
         fs::create_dir_all(&destination).unwrap();
-        fs::write(source.join("tasks.json"), r#"{"schemaVersion":1,"tasks":[{"id":"t1","title":"Legacy"}]}"#).unwrap();
-        fs::write(destination.join("tasks.json"), r#"{"schemaVersion":2,"revision":5,"tasks":[{"id":"t1","title":"Current"}]}"#).unwrap();
+        fs::write(
+            source.join("tasks.json"),
+            r#"{"schemaVersion":1,"tasks":[{"id":"t1","title":"Legacy"}]}"#,
+        )
+        .unwrap();
+        fs::write(
+            destination.join("tasks.json"),
+            r#"{"schemaVersion":2,"revision":5,"tasks":[{"id":"t1","title":"Current"}]}"#,
+        )
+        .unwrap();
 
         let copied = copy_shared_data_from_source(&source, &destination).unwrap();
         assert!(copied.is_empty());
@@ -3273,5 +3389,4 @@ mod tests {
 
         let _ = fs::remove_dir_all(root);
     }
-
 }

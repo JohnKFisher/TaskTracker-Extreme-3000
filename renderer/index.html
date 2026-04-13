@@ -19,7 +19,8 @@
   </div>
 
   <div id="tab-bar" role="tablist" aria-label="Main sections">
-    <button class="tab active" type="button" data-tab="tasks" role="tab" aria-selected="true">Tasks <span id="tab-count-tasks" class="tab-count"></span></button>
+    <button class="tab hidden" type="button" data-tab="personal" role="tab" aria-selected="false">Personal <span id="tab-count-personal" class="tab-count"></span></button>
+    <button class="tab active" type="button" data-tab="tasks" role="tab" aria-selected="true">Work Tasks <span id="tab-count-tasks" class="tab-count"></span></button>
     <button class="tab" type="button" data-tab="tickets" role="tab" aria-selected="false">Tickets <span id="tab-count-tickets" class="tab-count"></span></button>
     <button class="tab" type="button" data-tab="notes" role="tab" aria-selected="false">Notes</button>
     <button class="tab settings-tab" type="button" data-tab="settings" role="tab" aria-selected="false" title="Settings" aria-label="Settings">⚙</button>
@@ -27,75 +28,147 @@
 
   <div id="storage-banner" class="app-banner hidden" role="status" aria-live="polite"></div>
 
-  <div id="tab-tasks" class="tab-content active" role="tabpanel">
-    <div id="kanban">
-      <div class="kanban-section" data-column="standing">
+  <div id="tab-personal" class="tab-content hidden" role="tabpanel">
+    <div class="kanban-board" data-board="personal">
+      <div class="kanban-section" data-board="personal" data-column="standing">
         <div class="section-header" data-column="standing" role="button" tabindex="0" aria-expanded="true">
           <span class="collapse-arrow">▼</span>
           <span class="section-title">Standing</span>
           <span class="task-count">0</span>
         </div>
-        <div class="task-list" data-column="standing"></div>
+        <div class="task-list" data-board="personal" data-column="standing"></div>
       </div>
 
-      <div class="kanban-section" data-column="priority">
+      <div class="kanban-section" data-board="personal" data-column="priority">
         <div class="section-header" data-column="priority" role="button" tabindex="0" aria-expanded="true">
           <span class="collapse-arrow">▼</span>
           <span class="section-title">Priority</span>
           <span class="task-count">0</span>
         </div>
-        <div class="task-list" data-column="priority"></div>
+        <div class="task-list" data-board="personal" data-column="priority"></div>
       </div>
 
-      <div class="kanban-section" data-column="inprogress">
+      <div class="kanban-section" data-board="personal" data-column="inprogress">
         <div class="section-header" data-column="inprogress" role="button" tabindex="0" aria-expanded="true">
           <span class="collapse-arrow">▼</span>
           <span class="section-title">In Progress</span>
           <span class="task-count">0</span>
         </div>
-        <div class="task-list" data-column="inprogress"></div>
+        <div class="task-list" data-board="personal" data-column="inprogress"></div>
       </div>
 
-      <div class="kanban-section" data-column="todo">
+      <div class="kanban-section" data-board="personal" data-column="todo">
         <div class="section-header" data-column="todo" role="button" tabindex="0" aria-expanded="true">
           <span class="collapse-arrow">▼</span>
           <span class="section-title">To-Do</span>
           <span class="task-count">0</span>
         </div>
-        <div class="task-list" data-column="todo"></div>
+        <div class="task-list" data-board="personal" data-column="todo"></div>
       </div>
 
-      <div class="kanban-section" data-column="rainyday">
+      <div class="kanban-section" data-board="personal" data-column="rainyday">
         <div class="section-header" data-column="rainyday" role="button" tabindex="0" aria-expanded="true">
           <span class="collapse-arrow">▼</span>
           <span class="section-title">Rainy Day</span>
           <span class="task-count">0</span>
         </div>
-        <div class="task-list" data-column="rainyday"></div>
+        <div class="task-list" data-board="personal" data-column="rainyday"></div>
       </div>
 
-      <div class="kanban-section" data-column="done">
+      <div class="kanban-section" data-board="personal" data-column="done">
         <div class="section-header" data-column="done" role="button" tabindex="0" aria-expanded="true">
           <span class="collapse-arrow">▼</span>
           <span class="section-title">Done</span>
           <span class="task-count">0</span>
-          <button id="btn-clear-done" class="clear-done-btn" type="button" title="Clear done tasks">Clear</button>
+          <button class="clear-done-btn" type="button" data-board="personal" title="Clear done tasks">Clear</button>
         </div>
-        <div class="task-list" data-column="done"></div>
+        <div class="task-list" data-board="personal" data-column="done"></div>
       </div>
     </div>
 
-    <div id="add-task-bar">
-      <input type="text" id="new-task-input" placeholder="Add a new task..." aria-label="New task title">
-      <select id="new-task-column" aria-label="Task column">
+    <div class="add-task-bar" data-board="personal">
+      <input type="text" class="new-task-input" data-board="personal" placeholder="Add a new personal task..." aria-label="New personal task title">
+      <select class="new-task-column" data-board="personal" aria-label="Personal task column">
         <option value="standing">Standing</option>
         <option value="priority">Priority</option>
         <option value="inprogress">In Progress</option>
         <option value="todo" selected>To-Do</option>
         <option value="rainyday">Rainy Day</option>
       </select>
-      <button id="btn-add-task" type="button" aria-label="Add task">+</button>
-      <button id="btn-sort-alpha" type="button" title="Sort all columns alphabetically">A↓Z</button>
+      <button class="btn-add-task" type="button" data-board="personal" aria-label="Add personal task">+</button>
+      <button class="btn-sort-alpha" type="button" data-board="personal" title="Sort all personal columns alphabetically">A↓Z</button>
+    </div>
+  </div>
+
+  <div id="tab-tasks" class="tab-content active" role="tabpanel">
+    <div class="kanban-board" data-board="work">
+      <div class="kanban-section" data-board="work" data-column="standing">
+        <div class="section-header" data-column="standing" role="button" tabindex="0" aria-expanded="true">
+          <span class="collapse-arrow">▼</span>
+          <span class="section-title">Standing</span>
+          <span class="task-count">0</span>
+        </div>
+        <div class="task-list" data-board="work" data-column="standing"></div>
+      </div>
+
+      <div class="kanban-section" data-board="work" data-column="priority">
+        <div class="section-header" data-column="priority" role="button" tabindex="0" aria-expanded="true">
+          <span class="collapse-arrow">▼</span>
+          <span class="section-title">Priority</span>
+          <span class="task-count">0</span>
+        </div>
+        <div class="task-list" data-board="work" data-column="priority"></div>
+      </div>
+
+      <div class="kanban-section" data-board="work" data-column="inprogress">
+        <div class="section-header" data-column="inprogress" role="button" tabindex="0" aria-expanded="true">
+          <span class="collapse-arrow">▼</span>
+          <span class="section-title">In Progress</span>
+          <span class="task-count">0</span>
+        </div>
+        <div class="task-list" data-board="work" data-column="inprogress"></div>
+      </div>
+
+      <div class="kanban-section" data-board="work" data-column="todo">
+        <div class="section-header" data-column="todo" role="button" tabindex="0" aria-expanded="true">
+          <span class="collapse-arrow">▼</span>
+          <span class="section-title">To-Do</span>
+          <span class="task-count">0</span>
+        </div>
+        <div class="task-list" data-board="work" data-column="todo"></div>
+      </div>
+
+      <div class="kanban-section" data-board="work" data-column="rainyday">
+        <div class="section-header" data-column="rainyday" role="button" tabindex="0" aria-expanded="true">
+          <span class="collapse-arrow">▼</span>
+          <span class="section-title">Rainy Day</span>
+          <span class="task-count">0</span>
+        </div>
+        <div class="task-list" data-board="work" data-column="rainyday"></div>
+      </div>
+
+      <div class="kanban-section" data-board="work" data-column="done">
+        <div class="section-header" data-column="done" role="button" tabindex="0" aria-expanded="true">
+          <span class="collapse-arrow">▼</span>
+          <span class="section-title">Done</span>
+          <span class="task-count">0</span>
+          <button class="clear-done-btn" type="button" data-board="work" title="Clear done tasks">Clear</button>
+        </div>
+        <div class="task-list" data-board="work" data-column="done"></div>
+      </div>
+    </div>
+
+    <div class="add-task-bar" data-board="work">
+      <input type="text" class="new-task-input" data-board="work" placeholder="Add a new work task..." aria-label="New work task title">
+      <select class="new-task-column" data-board="work" aria-label="Work task column">
+        <option value="standing">Standing</option>
+        <option value="priority">Priority</option>
+        <option value="inprogress">In Progress</option>
+        <option value="todo" selected>To-Do</option>
+        <option value="rainyday">Rainy Day</option>
+      </select>
+      <button class="btn-add-task" type="button" data-board="work" aria-label="Add work task">+</button>
+      <button class="btn-sort-alpha" type="button" data-board="work" title="Sort all work columns alphabetically">A↓Z</button>
     </div>
   </div>
 
@@ -140,6 +213,17 @@
           <div id="storage-mode-value" class="info-card-value">Loading…</div>
           <div id="storage-message" class="info-card-message hidden"></div>
         </div>
+      </div>
+
+      <div class="settings-section">
+        <div class="settings-section-title">Tabs</div>
+        <p class="settings-hint">
+          Personal is a second task board with the same layout as Work Tasks. Its visibility is saved per machine.
+        </p>
+        <label id="show-personal-label" class="settings-toggle">
+          <input type="checkbox" id="toggle-personal-tab">
+          Show Personal tab
+        </label>
       </div>
 
       <div class="settings-section">

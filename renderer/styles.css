@@ -270,7 +270,7 @@ textarea:disabled {
   flex-direction: column;
 }
 
-#kanban {
+.kanban-board {
   flex: 1;
   overflow-y: auto;
   padding: 10px;
@@ -449,8 +449,8 @@ body.kanban-dragging .task-list {
 
 .task-title-input,
 .task-notes-area,
-#new-task-input,
-#new-task-column,
+.new-task-input,
+.new-task-column,
 #domain-input,
 #api-key-input,
 #notes-area,
@@ -463,8 +463,8 @@ body.kanban-dragging .task-list {
 }
 
 .task-title-input,
-#new-task-input,
-#new-task-column,
+.new-task-input,
+.new-task-column,
 #domain-input,
 #api-key-input,
 .quick-add-input {
@@ -513,7 +513,7 @@ body.kanban-dragging .task-list {
   box-shadow: var(--shadow);
 }
 
-#add-task-bar {
+.add-task-bar {
   display: grid;
   grid-template-columns: 1fr 112px 42px 64px;
   gap: 8px;
@@ -522,16 +522,16 @@ body.kanban-dragging .task-list {
   background: var(--bg-secondary);
 }
 
-#btn-add-task,
-#btn-sort-alpha {
+.btn-add-task,
+.btn-sort-alpha {
   border: 1px solid var(--border);
   border-radius: 10px;
   background: var(--bg-secondary);
   color: var(--text-secondary);
 }
 
-#btn-add-task:hover,
-#btn-sort-alpha:hover {
+.btn-add-task:hover,
+.btn-sort-alpha:hover {
   border-color: var(--accent);
   color: var(--accent);
 }
@@ -705,6 +705,13 @@ body.kanban-dragging .task-list {
   flex-wrap: wrap;
 }
 
+.settings-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--text-primary);
+}
+
 .info-card-label {
   margin-bottom: 6px;
   color: var(--text-muted);
@@ -765,7 +772,7 @@ body.kanban-dragging .task-list {
 }
 
 @media (max-width: 480px) {
-  #add-task-bar {
+  .add-task-bar {
     grid-template-columns: 1fr 1fr;
   }
 

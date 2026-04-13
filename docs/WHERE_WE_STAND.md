@@ -15,6 +15,7 @@ Working personal-use Tauri desktop app with a revisioned local/shared JSON data 
 - Sidebar desktop window with tray behavior, global shortcuts, and a quick-add window
 - On macOS, closing the main window now saves pending task/note edits and quits instead of hiding the accessory app window
 - Kanban task board with drag/drop, inline notes, delete confirmation, and count-aware clear-done confirmation
+- The main task board is now labeled `Work Tasks`, and an optional `Personal` board with the same layout can be shown per machine from Settings
 - Notes tab with persisted plain-JSON storage plus conflict-aware save blocking when another machine changed the same notes blob
 - Desk365 ticket integration using a stored hostname plus secure OS credential storage for the API key
 - Optional shared sync folder for tasks, notes, Desk365 hostname settings, and hidden ticket state
@@ -25,6 +26,7 @@ Working personal-use Tauri desktop app with a revisioned local/shared JSON data 
 - First rebuilt launch without a sync folder can import legacy local shared JSON from known pre-Tauri Windows/Electron locations into the current local app-data folder
 - Settings now includes a `Try Legacy Import` button to rescan known older storage locations and merge recoverable shared JSON into the current storage target
 - Settings now includes an `Import From File…` flow so you can point directly at an older `tasks.json`, `config.json`, `hidden-tickets.json`, `notes.json`, or `local-settings.json`
+- Settings now includes a machine-local toggle to show or hide the Personal tab, which appears before Work Tasks when enabled
 - Missing sync-folder settings can now be recovered automatically from legacy `local-settings.json` data when the new app-data location does not have them yet
 - Windows kanban now uses Sortable's fallback drag mode, stronger full-width headers, and more compact drop zones to make cross-column dragging more reliable and obvious
 - Tickets now keep their refresh/reconnect controls at the bottom of the panel to preserve vertical space at the top
