@@ -9,7 +9,7 @@ TaskTracker Extreme 3000
 - Current build number: `10`
 
 ## Overall Status
-Working personal-use Tauri desktop app with a revisioned local/shared JSON data model, secure Desk365 credential storage, explicit shared-storage status reporting, and a checked-in deterministic version/build workflow. Shared task data now watches for cross-machine changes, reconciles periodically, merges common task/hidden-ticket collisions conservatively, can import legacy data into a newly chosen sync folder, and on first rebuilt launch can pull older local Windows/Electron task files into the current app-data location. The repo is now at version `2.2.1` / build `10`, with passing Rust unit tests after the Windows recovery and kanban drag/drop follow-up pass.
+Working personal-use Tauri desktop app with a revisioned local/shared JSON data model, secure Desk365 credential storage, explicit shared-storage status reporting, and a checked-in deterministic version/build workflow. Shared task data now watches for cross-machine changes, reconciles periodically, merges common task/hidden-ticket collisions conservatively, can import legacy data into a newly chosen sync folder, and on first rebuilt launch can pull older local Windows/Electron task files into the current app-data location. The current follow-up pass also adds a manual legacy-import button in Settings, moves ticket refresh/reconnect controls to the bottom of the tickets panel, and switches kanban dragging to Sortable's fallback path for better Windows/WebView2 reliability. The repo is now at version `2.2.1` / build `10`.
 
 ## What Works Now
 - Sidebar desktop window with tray behavior, global shortcuts, and a quick-add window
@@ -23,7 +23,9 @@ Working personal-use Tauri desktop app with a revisioned local/shared JSON data 
 - Task and hidden-ticket saves now merge remote changes instead of blindly overwriting stale local copies
 - Picking a new sync folder can import shared JSON from the current app data location or known legacy pre-Tauri locations
 - First rebuilt launch without a sync folder can import legacy local shared JSON from known pre-Tauri Windows/Electron locations into the current local app-data folder
-- Windows kanban sections now use stronger full-width headers and larger drop zones to make drag/drop targets more obvious
+- Settings now includes a `Try Legacy Import` button to rescan known older storage locations and merge recoverable shared JSON into the current storage target
+- Windows kanban now uses Sortable's fallback drag mode, stronger full-width headers, and more compact drop zones to make cross-column dragging more reliable and obvious
+- Tickets now keep their refresh/reconnect controls at the bottom of the panel to preserve vertical space at the top
 - Visible warning state when a configured sync folder is unavailable
 - Settings tab with storage status plus an About section showing version/build and the public GitHub repo
 - Checked-in version/build workflow through `version.json` and helper scripts
@@ -35,7 +37,7 @@ Working personal-use Tauri desktop app with a revisioned local/shared JSON data 
 - The new GitHub Actions build and release workflows are configured and syntax-checked locally, but their first remote runs still need to complete on GitHub
 - Capability narrowing was improved at the desktop capability file level, but the app still relies on core Tauri window/event/webview access rather than a deeply custom per-command permission model
 - Notes conflict handling is intentionally conservative: the app preserves the unsaved local draft and blocks overwrite, but it does not yet offer an in-app merge UI for conflicting note blobs
-- Legacy startup import is one-time and conservative; it does not automatically switch the app onto an old synced folder
+- Legacy startup import is one-time and conservative; it does not automatically switch the app onto an old synced folder, though the same scan can now be re-run manually from Settings
 
 ## What Is Not Implemented Yet
 - A recorded durable known-good rollback anchor in project docs
@@ -63,9 +65,10 @@ Working personal-use Tauri desktop app with a revisioned local/shared JSON data 
 - Credential-store behavior can differ by platform, so secure storage changes should continue to be tested on both Windows and macOS
 
 ## Recommended Next Priorities
-1. Smoke-test the Windows first-run import and drag/drop behavior on a real rebuilt Windows machine with legacy data present.
-2. Smoke-test the multi-machine sync behavior on two real machines sharing the same cloud-synced folder.
-3. Confirm the `main` push build produces the portable Windows EXE and universal macOS DMG artifacts on GitHub.
+1. Smoke-test the Windows kanban drag/drop behavior on a real rebuilt Windows machine, especially cross-column moves into sparse columns.
+2. Smoke-test the manual `Try Legacy Import` button against a machine that still has pre-Tauri/Electron local data.
+3. Smoke-test the multi-machine sync behavior on two real machines sharing the same cloud-synced folder.
+4. Confirm the `main` push build produces the portable Windows EXE and universal macOS DMG artifacts on GitHub.
 
 ## Most Recent Durable Known-Good Anchor
 None recorded yet.

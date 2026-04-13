@@ -1206,6 +1206,46 @@ fn startup_import_candidates(settings: &LocalSettings, destination: &Path) -> Ve
     unique_candidate_dirs(candidates, destination)
 }
 
+fn import_legacy_shared_data_into_destination(
+    settings: &LocalSettings,
+    destination: &Path,
+    _app: &AppHandle,
+) -> Result<Option<String>, AppError> {
+    let source = startup_import_candidates(settings, destination)
+        .into_iter()
+        .filter_map(|candidate| {
+            let score = directory_shared_data_score(&candidate);
+            if score.0 == 0 {
+                None
+            } else {
+                Some((candidate, score))
+            }
+        })
+        .max_by(|left, right| left.1.cmp(&right.1))
+        .map(|(candidate, _)| candidate);
+
+    let Some(source) = source else {
+        return Ok(Some(
+            "No known legacy task/settings files were found to import.".to_string(),
+        ));
+    };
+
+    let copied_files = copy_shared_data_from_source(&source, destination)?;
+    if copied_files.is_empty() {
+        Ok(Some(format!(
+            "Found legacy data at {}, but the current destination already had newer shared files.",
+            source.display()
+        )))
+    } else {
+        Ok(Some(format!(
+            "Imported {} shared-data file{} from {}.",
+            copied_files.len(),
+            if copied_files.len() == 1 { "" } else { "s" },
+            source.display()
+        )))
+    }
+}
+
 fn run_startup_legacy_import(
     settings: &mut LocalSettings,
     app: &AppHandle,
@@ -1220,38 +1260,16 @@ fn run_startup_legacy_import(
         return Ok(None);
     }
 
-    let source = startup_import_candidates(settings, &destination)
-        .into_iter()
-        .filter_map(|candidate| {
-            let score = directory_shared_data_score(&candidate);
-            if score.0 == 0 {
-                None
-            } else {
-                Some((candidate, score))
-            }
-        })
-        .max_by(|left, right| left.1.cmp(&right.1))
-        .map(|(candidate, _)| candidate);
-
     settings.startup_legacy_import_done = true;
-
-    let Some(source) = source else {
-        return Ok(None);
-    };
-
-    let copied_files = copy_shared_data_from_source(&source, &destination)?;
-    if copied_files.is_empty() {
-        Ok(Some(format!(
-            "Found legacy data at {}, but the current app data already had newer shared files.",
-            source.display()
-        )))
+    let notice = import_legacy_shared_data_into_destination(settings, &destination, app)?;
+    if let Some(message) = notice {
+        if message.starts_with("No known legacy") {
+            Ok(None)
+        } else {
+            Ok(Some(format!("{message} Into the current app data folder.")))
+        }
     } else {
-        Ok(Some(format!(
-            "Imported {} shared-data file{} from {} into the current app data folder.",
-            copied_files.len(),
-            if copied_files.len() == 1 { "" } else { "s" },
-            source.display()
-        )))
+        Ok(None)
     }
 }
 
@@ -2013,6 +2031,36 @@ fn save_local_settings_cmd(
 }
 
 #[tauri::command]
+fn attempt_legacy_import_cmd(
+    state: State<AppState>,
+    app: AppHandle,
+) -> CommandResponse<StorageStatus> {
+    let settings = state.local_settings.lock().unwrap().clone();
+    let destination = match shared_data_dir(&settings, &app) {
+        Ok(path) => path,
+        Err(err) => return CommandResponse::err(&err.code, err.message),
+    };
+
+    let import_notice = match import_legacy_shared_data_into_destination(&settings, &destination, &app)
+    {
+        Ok(notice) => notice,
+        Err(err) => return CommandResponse::err(&err.code, err.message),
+    };
+
+    let migration_result =
+        migrate_legacy_ticket_secret_if_needed(&settings, &app, &KeyringCredentialStore);
+    *state.ticket_auth_error.lock().unwrap() = match migration_result {
+        Ok(_) => None,
+        Err(err) if err.code == "sync_unavailable" => None,
+        Err(err) => Some(err.message),
+    };
+
+    let mut status = compute_storage_status(&settings, &app);
+    status.notice = import_notice;
+    CommandResponse::ok(status)
+}
+
+#[tauri::command]
 fn get_storage_status(state: State<AppState>, app: AppHandle) -> CommandResponse<StorageStatus> {
     let settings = state.local_settings.lock().unwrap().clone();
     CommandResponse::ok(compute_storage_status(&settings, &app))
@@ -2417,6 +2465,7 @@ fn main() {
             clear_secure_api_key,
             load_local_settings_cmd,
             save_local_settings_cmd,
+            attempt_legacy_import_cmd,
             get_storage_status,
             get_app_metadata,
             window_minimize,

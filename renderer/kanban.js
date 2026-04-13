@@ -342,6 +342,9 @@ COLUMNS.forEach((column) => {
   Sortable.create(element, {
     group: 'kanban',
     animation: 150,
+    forceFallback: true,
+    fallbackOnBody: true,
+    fallbackTolerance: 2,
     emptyInsertThreshold: 36,
     ghostClass: 'sortable-ghost',
     chosenClass: 'sortable-chosen',
@@ -356,26 +359,35 @@ COLUMNS.forEach((column) => {
       return true;
     },
     onEnd: async (event) => {
-      if (!isTaskStorageWritable()) {
-        setDraggingState(false);
-        await loadTasks({ silent: true });
-        return;
-      }
+      try {
+        if (!isTaskStorageWritable()) {
+          await loadTasks({ silent: true });
+          return;
+        }
 
-      const taskId = event.item.dataset.id;
-      const newColumn = event.to.dataset.column;
-      const task = tasks.find((entry) => entry.id === taskId);
+        const taskId = event.item.dataset.id;
+        const sourceColumn = event.from && event.from.dataset ? event.from.dataset.column : null;
+        const newColumn = event.to && event.to.dataset ? event.to.dataset.column : null;
+        const task = tasks.find((entry) => entry.id === taskId);
 
-      if (task) {
+        if (!task || !newColumn) {
+          await loadTasks({ silent: true });
+          return;
+        }
+
         task.column = newColumn;
         task.updatedAt = new Date().toISOString();
         markTasksDirty();
-      }
 
-      [event.from.dataset.column, newColumn].forEach((col) => alphaSortColumn(col));
-      saveTasks();
-      renderAllColumns();
-      setDraggingState(false);
+        [sourceColumn, newColumn]
+          .filter((value, index, array) => value && array.indexOf(value) === index)
+          .forEach((col) => alphaSortColumn(col));
+
+        saveTasks();
+        renderAllColumns();
+      } finally {
+        setDraggingState(false);
+      }
     },
   });
 });

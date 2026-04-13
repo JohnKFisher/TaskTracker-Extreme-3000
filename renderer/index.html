@@ -100,13 +100,6 @@
   </div>
 
   <div id="tab-tickets" class="tab-content" role="tabpanel">
-    <div id="tickets-header">
-      <button id="btn-refresh-tickets" type="button" title="Refresh tickets">↻ Refresh</button>
-      <label id="show-hidden-label">
-        <input type="checkbox" id="show-hidden-tickets"> Show hidden
-      </label>
-      <button id="btn-change-api-key" type="button" title="Reconnect Desk365">Reconnect</button>
-    </div>
     <div id="tickets-status" class="status-text" aria-live="polite"></div>
     <div id="tickets-list"></div>
 
@@ -120,6 +113,14 @@
       <input type="password" id="api-key-input" placeholder="Paste API key..." autocomplete="off">
       <p class="hint">Find it in Desk365 under Settings → Integrations → API.</p>
       <button id="btn-save-api-key" type="button" class="primary-btn">Save Securely</button>
+    </div>
+
+    <div id="tickets-actions">
+      <button id="btn-refresh-tickets" type="button" title="Refresh tickets">↻ Refresh</button>
+      <label id="show-hidden-label">
+        <input type="checkbox" id="show-hidden-tickets"> Show hidden
+      </label>
+      <button id="btn-change-api-key" type="button" title="Reconnect Desk365">Reconnect</button>
     </div>
   </div>
 
@@ -150,7 +151,9 @@
         <div class="settings-buttons">
           <button id="btn-browse-sync-folder" type="button" class="settings-btn">Browse…</button>
           <button id="btn-clear-sync-folder" type="button" class="settings-btn hidden">Clear</button>
+          <button id="btn-import-legacy-data" type="button" class="settings-btn">Try Legacy Import</button>
         </div>
+        <p class="settings-hint">Scans known older app locations and copies shared tasks/settings into the current storage location if found.</p>
         <div id="sync-folder-result" class="info-card-message info hidden"></div>
       </div>
 

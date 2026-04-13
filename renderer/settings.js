@@ -75,6 +75,15 @@ function renderAbout(metadata) {
   document.getElementById('about-license').textContent = `License: ${metadata.license} • Primary platform: ${metadata.primaryPlatform}`;
 }
 
+async function applyStorageStatusResult(status) {
+  renderStorageStatus(status);
+  renderSyncFolderNotice(status.notice || null, status.notice ? 'info' : 'info');
+  if (status.notice) {
+    window.showAppNotice(status.notice, 'info', 9000);
+  }
+  await window.refreshStorageStatus();
+}
+
 document.getElementById('btn-browse-sync-folder').addEventListener('click', async () => {
   try {
     const folder = await window.callCommand('pick_sync_folder');
@@ -85,12 +94,7 @@ document.getElementById('btn-browse-sync-folder').addEventListener('click', asyn
     });
 
     updateSyncFolderDisplay(folder);
-    renderStorageStatus(status);
-    renderSyncFolderNotice(status.notice || null, status.notice ? 'info' : 'info');
-    if (status.notice) {
-      window.showAppNotice(status.notice, 'info', 9000);
-    }
-    await window.refreshStorageStatus();
+    await applyStorageStatusResult(status);
   } catch (error) {
     console.error('Failed to save sync folder:', error);
   }
@@ -106,14 +110,19 @@ document.getElementById('btn-clear-sync-folder').addEventListener('click', async
     });
 
     updateSyncFolderDisplay(null);
-    renderStorageStatus(status);
-    renderSyncFolderNotice(status.notice || null, status.notice ? 'info' : 'info');
-    if (status.notice) {
-      window.showAppNotice(status.notice, 'info', 9000);
-    }
-    await window.refreshStorageStatus();
+    await applyStorageStatusResult(status);
   } catch (error) {
     console.error('Failed to clear sync folder:', error);
+  }
+});
+
+document.getElementById('btn-import-legacy-data').addEventListener('click', async () => {
+  try {
+    const status = await window.callCommand('attempt_legacy_import_cmd');
+    await applyStorageStatusResult(status);
+  } catch (error) {
+    console.error('Failed to import legacy shared data:', error);
+    renderSyncFolderNotice(error.message || 'Could not import legacy shared data.', 'danger');
   }
 });
 

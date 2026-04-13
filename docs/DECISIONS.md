@@ -71,3 +71,7 @@ Status: approved
 ## 2026-04-13 — On first rebuilt launch, import legacy local shared data without auto-adopting old sync paths
 Rationale: The first Windows launch after the rebuild should recover old tasks and config automatically when legacy local data exists, but it should do so conservatively by importing into the new local app-data location rather than silently repointing the app at an old synced folder. This reduces surprise and preserves explicit sync-folder choice.
 Status: approved
+
+## 2026-04-13 — Use Sortable fallback drag mode and expose a manual legacy import button
+Rationale: WebView2 drag behavior on Windows proved less reliable with the native drag path, so the kanban now uses Sortable's fallback drag handling for more predictable cross-column moves. A manual settings button to scan known legacy locations gives the owner an explicit recovery path if first-run import misses older task/config files.
+Status: approved
