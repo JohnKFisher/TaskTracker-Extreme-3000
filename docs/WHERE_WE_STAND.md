@@ -30,6 +30,7 @@ Working personal-use Tauri desktop app with a revisioned local/shared JSON data 
 - Tickets now keep their refresh/reconnect controls at the bottom of the panel to preserve vertical space at the top
 - Hidden-ticket save errors now stay in the hidden-ticket flow instead of forcing a full ticket reinitialize/API fetch
 - Desk365 API-key saves now verify that the key is still present in secure storage immediately after writing it
+- Desk365 fetches are now deduplicated and rate-limited in the renderer so startup/status events do not trip the API's short-window request limit
 - Visible warning state when a configured sync folder is unavailable
 - Settings tab with storage status plus an About section showing version/build and the public GitHub repo
 - Checked-in version/build workflow through `version.json` and helper scripts

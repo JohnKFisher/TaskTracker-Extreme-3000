@@ -1,5 +1,6 @@
 let desk365Base = '';
 const POLL_INTERVAL = 5 * 60 * 1000;
+const MIN_FETCH_INTERVAL_MS = 2100;
 
 let ticketState = null;
 let hiddenTicketDocument = {
@@ -14,6 +15,10 @@ let currentTickets = [];
 let seenTicketNumbers = new Set();
 let pollTimer = null;
 let hiddenTicketSaveInFlight = false;
+let ticketFetchInFlight = null;
+let queuedFetchTimer = null;
+let lastTicketFetchStartedAt = 0;
+let initializeTicketsPromise = null;
 
 const ticketsList = document.getElementById('tickets-list');
 const ticketsStatus = document.getElementById('tickets-status');
@@ -26,6 +31,11 @@ const saveApiKeyBtn = document.getElementById('btn-save-api-key');
 function stopPolling() {
   if (pollTimer) clearInterval(pollTimer);
   pollTimer = null;
+}
+
+function clearQueuedFetchTimer() {
+  if (queuedFetchTimer) clearTimeout(queuedFetchTimer);
+  queuedFetchTimer = null;
 }
 
 function startPolling() {
@@ -194,12 +204,13 @@ async function toggleHideTicket(ticketNumber) {
   }
 }
 
-async function fetchAndRenderTickets() {
+async function runTicketFetch() {
   if (!(ticketState && ticketState.hasApiKey && ticketState.desk365Domain)) return;
   if (!(window.currentStorageStatus && window.currentStorageStatus.sharedDataAvailable)) return;
 
   ticketsStatus.textContent = 'Loading tickets…';
   refreshBtn.disabled = true;
+  lastTicketFetchStartedAt = Date.now();
 
   try {
     const result = await window.callCommand('fetch_tickets');
@@ -233,10 +244,39 @@ async function fetchAndRenderTickets() {
   }
 }
 
-async function initializeTickets() {
+function fetchAndRenderTickets(options = {}) {
+  const { force = false } = options;
+
+  if (ticketFetchInFlight) {
+    return ticketFetchInFlight;
+  }
+
+  const now = Date.now();
+  const remainingMs = MIN_FETCH_INTERVAL_MS - (now - lastTicketFetchStartedAt);
+  if (remainingMs > 0) {
+    if (!force) {
+      return Promise.resolve();
+    }
+
+    ticketsStatus.textContent = 'Waiting a moment to avoid Desk365 rate limiting…';
+    clearQueuedFetchTimer();
+    return new Promise((resolve, reject) => {
+      queuedFetchTimer = setTimeout(() => {
+        queuedFetchTimer = null;
+        fetchAndRenderTickets({ force: true }).then(resolve).catch(reject);
+      }, remainingMs);
+    });
+  }
+
+  ticketFetchInFlight = runTicketFetch()
+    .finally(() => {
+      ticketFetchInFlight = null;
+    });
+  return ticketFetchInFlight;
+}
+
+async function performInitializeTickets() {
   stopPolling();
-  currentTickets = [];
-  seenTicketNumbers = new Set();
 
   try {
     await loadTicketState();
@@ -262,6 +302,8 @@ async function initializeTickets() {
     await fetchAndRenderTickets();
     startPolling();
   } else {
+    currentTickets = [];
+    seenTicketNumbers = new Set();
     setTicketSetupVisible(true);
     ticketsList.innerHTML = '';
     if (!storageAvailable) {
@@ -272,6 +314,17 @@ async function initializeTickets() {
       ticketsStatus.textContent = '';
     }
   }
+}
+
+function initializeTickets() {
+  if (initializeTicketsPromise) {
+    return initializeTicketsPromise;
+  }
+
+  initializeTicketsPromise = performInitializeTickets().finally(() => {
+    initializeTicketsPromise = null;
+  });
+  return initializeTicketsPromise;
 }
 
 saveApiKeyBtn.addEventListener('click', async () => {
@@ -316,7 +369,7 @@ changeApiKeyBtn.addEventListener('click', async () => {
   }
 });
 
-refreshBtn.addEventListener('click', fetchAndRenderTickets);
+refreshBtn.addEventListener('click', () => fetchAndRenderTickets({ force: true }));
 showHiddenCheckbox.addEventListener('change', renderTickets);
 
 window.addEventListener('storage-status-changed', async () => {
