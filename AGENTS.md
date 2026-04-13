@@ -590,6 +590,16 @@ explicitly approve it. If a release fix is needed after a published
 version already exists, create a new patch version/build and publish that
 instead.
 
+### Release notes default
+
+For version-triggered GitHub Releases:
+- Do not use placeholder or generic release notes.
+- Release notes must describe the actual changes since the previous release.
+- Prefer generating the release body from commit subjects (and, if useful, short bodies) between the previous release tag and the release commit.
+- Exclude routine version-bump-only commits from the human-facing notes when possible.
+- If the workflow needs git history or tags to build release notes, ensure checkout fetches enough history in CI (for example `fetch-depth: 0`).
+- If no previous release tag exists, fall back to a clear first-release summary derived from available commit history rather than a placeholder body.
+
 
 ### Verification required for CI / release work
 
