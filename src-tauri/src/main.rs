@@ -375,9 +375,30 @@ fn normalize_sync_folder(value: Option<String>) -> Option<String> {
         if trimmed.is_empty() {
             None
         } else {
-            Some(trimmed.to_string())
+            Some(normalize_path_value(trimmed))
         }
     })
+}
+
+fn normalize_path_value(value: &str) -> String {
+    let trimmed = value.trim();
+    if let Some(stripped) = trimmed.strip_prefix("file:///") {
+        #[cfg(target_os = "windows")]
+        {
+            return stripped.replace('/', "\\");
+        }
+        #[cfg(not(target_os = "windows"))]
+        {
+            return format!("/{}", stripped);
+        }
+    }
+    if let Some(stripped) = trimmed.strip_prefix("file://") {
+        #[cfg(not(target_os = "windows"))]
+        {
+            return format!("/{}", stripped.trim_start_matches('/'));
+        }
+    }
+    trimmed.to_string()
 }
 
 fn generate_device_id() -> String {
@@ -400,6 +421,14 @@ fn normalize_local_settings(mut settings: LocalSettings) -> LocalSettings {
         settings.device_id = Some(generate_device_id());
     }
     settings
+}
+
+fn merge_missing_sync_folder(current: &LocalSettings, imported: &LocalSettings) -> LocalSettings {
+    let mut merged = current.clone();
+    if merged.sync_folder.is_none() {
+        merged.sync_folder = normalize_sync_folder(imported.sync_folder.clone());
+    }
+    normalize_local_settings(merged)
 }
 
 fn default_task_timestamp(task: &TaskItem, fallback: &str) -> String {
@@ -952,6 +981,10 @@ fn read_local_settings(app: &AppHandle) -> Result<LocalSettings, AppError> {
     Ok(normalize_local_settings(read_or_default(&path)?))
 }
 
+fn read_local_settings_from_path(path: &Path) -> Result<LocalSettings, AppError> {
+    Ok(normalize_local_settings(read_or_default(path)?))
+}
+
 fn save_local_settings(settings: &LocalSettings, app: &AppHandle) -> Result<(), AppError> {
     let path = local_settings_path(app)?;
     write_json_file(&path, &normalize_local_settings(settings.clone()))
@@ -1075,18 +1108,20 @@ fn legacy_packaged_data_dirs() -> Vec<PathBuf> {
     #[cfg(target_os = "windows")]
     {
         if let Some(appdata) = std::env::var_os("APPDATA") {
-            candidates.push(PathBuf::from(appdata).join("tasktracker-extreme-3000"));
+            let base = PathBuf::from(appdata);
+            candidates.push(base.join("tasktracker-extreme-3000"));
+            candidates.push(base.join("TaskTracker Extreme 3000"));
+            candidates.push(base.join("TaskTracker-Extreme-3000"));
         }
     }
     #[cfg(target_os = "macos")]
     {
         if let Some(home) = std::env::var_os("HOME") {
-            candidates.push(
-                PathBuf::from(home)
-                    .join("Library")
-                    .join("Application Support")
-                    .join("tasktracker-extreme-3000"),
-            );
+            let base = PathBuf::from(home)
+                .join("Library")
+                .join("Application Support");
+            candidates.push(base.join("tasktracker-extreme-3000"));
+            candidates.push(base.join("TaskTracker Extreme 3000"));
         }
     }
     candidates
@@ -1206,6 +1241,50 @@ fn startup_import_candidates(settings: &LocalSettings, destination: &Path) -> Ve
     unique_candidate_dirs(candidates, destination)
 }
 
+fn select_legacy_local_settings_source(
+    current: &LocalSettings,
+    _app: &AppHandle,
+) -> Option<PathBuf> {
+    if current.sync_folder.is_some() {
+        return None;
+    }
+
+    legacy_packaged_data_dirs()
+        .into_iter()
+        .map(|dir| dir.join(LOCAL_SETTINGS_FILE))
+        .filter(|path| path.is_file())
+        .filter_map(|path| {
+            let settings = read_local_settings_from_path(&path).ok()?;
+            let sync_folder = normalize_sync_folder(settings.sync_folder.clone())?;
+            let modified = shared_file_modified_time(&path);
+            Some((path, sync_folder, modified))
+        })
+        .max_by(|left, right| left.2.cmp(&right.2))
+        .map(|(path, _, _)| path)
+}
+
+fn import_legacy_local_settings_if_needed(
+    current: &LocalSettings,
+    app: &AppHandle,
+) -> Result<(LocalSettings, Option<String>), AppError> {
+    let Some(source) = select_legacy_local_settings_source(current, app) else {
+        return Ok((current.clone(), None));
+    };
+
+    let imported = read_local_settings_from_path(&source)?;
+    let merged = merge_missing_sync_folder(current, &imported);
+    let Some(_) = merged.sync_folder.clone() else {
+        return Ok((current.clone(), None));
+    };
+    Ok((
+        merged,
+        Some(format!(
+            "Recovered the saved sync folder setting from {}.",
+            source.display()
+        )),
+    ))
+}
+
 fn import_legacy_shared_data_into_destination(
     settings: &LocalSettings,
     destination: &Path,
@@ -1270,6 +1349,40 @@ fn run_startup_legacy_import(
         }
     } else {
         Ok(None)
+    }
+}
+
+fn import_shared_data_from_source_dir(
+    source: &Path,
+    destination: &Path,
+) -> Result<Option<String>, AppError> {
+    if !source.is_dir() {
+        return Err(AppError {
+            code: "invalid_import_source".to_string(),
+            message: format!("{} is not a folder containing shared data.", source.display()),
+        });
+    }
+
+    let copied_files = copy_shared_data_from_source(source, destination)?;
+    if copied_files.is_empty() {
+        if directory_shared_data_score(source).0 == 0 {
+            Ok(Some(format!(
+                "No recognized shared-data files were found in {}.",
+                source.display()
+            )))
+        } else {
+            Ok(Some(format!(
+                "The current destination already had newer shared files than {}.",
+                source.display()
+            )))
+        }
+    } else {
+        Ok(Some(format!(
+            "Imported {} shared-data file{} from {}.",
+            copied_files.len(),
+            if copied_files.len() == 1 { "" } else { "s" },
+            source.display()
+        )))
     }
 }
 
@@ -1967,10 +2080,17 @@ fn save_secure_api_key(api_key: String, state: State<AppState>) -> CommandRespon
     }
 
     match KeyringCredentialStore.set_api_key(value) {
-        Ok(_) => {
-            *state.ticket_auth_error.lock().unwrap() = None;
-            CommandResponse::ok(())
-        }
+        Ok(_) => match KeyringCredentialStore.get_api_key() {
+            Ok(Some(_)) => {
+                *state.ticket_auth_error.lock().unwrap() = None;
+                CommandResponse::ok(())
+            }
+            Ok(None) => CommandResponse::err(
+                "credential_store_unavailable",
+                "The Desk365 API key did not remain saved after writing it to the secure credential store.",
+            ),
+            Err(err) => CommandResponse::err(&err.code, err.message),
+        },
         Err(err) => CommandResponse::err(&err.code, err.message),
     }
 }
@@ -2057,6 +2177,109 @@ fn attempt_legacy_import_cmd(
 
     let mut status = compute_storage_status(&settings, &app);
     status.notice = import_notice;
+    CommandResponse::ok(status)
+}
+
+#[tauri::command]
+fn attempt_legacy_import_from_path_cmd(
+    path: String,
+    state: State<AppState>,
+    app: AppHandle,
+) -> CommandResponse<StorageStatus> {
+    let selected_path = PathBuf::from(normalize_path_value(&path));
+    let previous_settings = state.local_settings.lock().unwrap().clone();
+
+    let notice = if selected_path
+        .file_name()
+        .and_then(|entry| entry.to_str())
+        == Some(LOCAL_SETTINGS_FILE)
+    {
+        let imported = match read_local_settings_from_path(&selected_path) {
+            Ok(settings) => settings,
+            Err(err) => return CommandResponse::err(&err.code, err.message),
+        };
+        let Some(sync_folder) = normalize_sync_folder(imported.sync_folder) else {
+            return CommandResponse::err(
+                "invalid_import_source",
+                format!(
+                    "{} does not contain a saved sync folder setting.",
+                    selected_path.display()
+                ),
+            );
+        };
+
+        let mut next_settings = previous_settings.clone();
+        next_settings.sync_folder = Some(sync_folder);
+        let next_settings = normalize_local_settings(next_settings);
+
+        if let Err(err) = save_local_settings(&next_settings, &app) {
+            return CommandResponse::err(&err.code, err.message);
+        }
+        *state.local_settings.lock().unwrap() = next_settings.clone();
+
+        let migration_notice =
+            match migrate_shared_data_if_needed(&previous_settings, &next_settings, &app) {
+                Ok(notice) => notice,
+                Err(err) => Some(err.message),
+            };
+        let _ = sync_shared_data_watcher(&app);
+
+        let migration_result =
+            migrate_legacy_ticket_secret_if_needed(&next_settings, &app, &KeyringCredentialStore);
+        *state.ticket_auth_error.lock().unwrap() = match migration_result {
+            Ok(_) => None,
+            Err(err) if err.code == "sync_unavailable" => None,
+            Err(err) => Some(err.message),
+        };
+
+        let mut status = compute_storage_status(&next_settings, &app);
+        status.notice = Some(match migration_notice {
+            Some(extra) => format!(
+                "Recovered the sync folder setting from {}. {}",
+                selected_path.display(),
+                extra
+            ),
+            None => format!(
+                "Recovered the sync folder setting from {}.",
+                selected_path.display()
+            ),
+        });
+        return CommandResponse::ok(status);
+    } else {
+        let source_dir = if selected_path.is_dir() {
+            selected_path.clone()
+        } else {
+            match selected_path.parent() {
+                Some(parent) => parent.to_path_buf(),
+                None => {
+                    return CommandResponse::err(
+                        "invalid_import_source",
+                        format!("Could not use {} as an import source.", selected_path.display()),
+                    )
+                }
+            }
+        };
+        let destination = match shared_data_dir(&previous_settings, &app) {
+            Ok(path) => path,
+            Err(err) => return CommandResponse::err(&err.code, err.message),
+        };
+
+        match import_shared_data_from_source_dir(&source_dir, &destination) {
+            Ok(notice) => notice,
+            Err(err) => return CommandResponse::err(&err.code, err.message),
+        }
+    };
+
+    let migration_result =
+        migrate_legacy_ticket_secret_if_needed(&previous_settings, &app, &KeyringCredentialStore);
+    *state.ticket_auth_error.lock().unwrap() = match migration_result {
+        Ok(_) => None,
+        Err(err) if err.code == "sync_unavailable" => None,
+        Err(err) => Some(err.message),
+    };
+
+    let mut status = compute_storage_status(&previous_settings, &app);
+    status.notice = notice;
     CommandResponse::ok(status)
 }
 
@@ -2341,7 +2564,33 @@ async fn pick_sync_folder(app: AppHandle) -> CommandResponse<Option<String>> {
         });
 
     match rx.await {
-        Ok(Some(folder)) => CommandResponse::ok(Some(folder.to_string())),
+        Ok(Some(folder)) => match folder.clone().into_path() {
+            Ok(path) => CommandResponse::ok(Some(path.to_string_lossy().to_string())),
+            Err(_) => CommandResponse::ok(Some(normalize_path_value(&folder.to_string()))),
+        },
+        Ok(None) => CommandResponse::ok(None),
+        Err(err) => CommandResponse::err("dialog_error", err.to_string()),
+    }
+}
+
+#[tauri::command]
+async fn pick_legacy_import_file(app: AppHandle) -> CommandResponse<Option<String>> {
+    use tauri_plugin_dialog::DialogExt;
+
+    let (tx, rx) = tokio::sync::oneshot::channel();
+    app.dialog()
+        .file()
+        .set_title("Select Legacy Task/Settings File")
+        .add_filter("JSON", &["json"])
+        .pick_file(move |file| {
+            let _ = tx.send(file);
+        });
+
+    match rx.await {
+        Ok(Some(file)) => match file.clone().into_path() {
+            Ok(path) => CommandResponse::ok(Some(path.to_string_lossy().to_string())),
+            Err(_) => CommandResponse::ok(Some(normalize_path_value(&file.to_string()))),
+        },
         Ok(None) => CommandResponse::ok(None),
         Err(err) => CommandResponse::err("dialog_error", err.to_string()),
     }
@@ -2379,9 +2628,13 @@ fn main() {
             #[cfg(target_os = "macos")]
             app.set_activation_policy(tauri::ActivationPolicy::Accessory);
 
-            let mut local_settings = read_local_settings(app.handle()).unwrap_or_else(|_| {
-                normalize_local_settings(LocalSettings::default())
-            });
+            let initial_local_settings =
+                read_local_settings(app.handle()).unwrap_or_else(|_| {
+                    normalize_local_settings(LocalSettings::default())
+                });
+            let (mut local_settings, legacy_local_settings_notice) =
+                import_legacy_local_settings_if_needed(&initial_local_settings, app.handle())
+                    .unwrap_or((initial_local_settings, None));
             let startup_import_notice = run_startup_legacy_import(&mut local_settings, app.handle())
                 .ok()
                 .flatten();
@@ -2397,6 +2650,10 @@ fn main() {
                 Err(err) if err.code == "sync_unavailable" => None,
                 Err(err) => Some(err.message),
             };
+
+            if let Some(notice) = legacy_local_settings_notice {
+                eprintln!("{notice}");
+            }
 
             if let Some(notice) = startup_import_notice {
                 eprintln!("{notice}");
@@ -2466,6 +2723,7 @@ fn main() {
             load_local_settings_cmd,
             save_local_settings_cmd,
             attempt_legacy_import_cmd,
+            attempt_legacy_import_from_path_cmd,
             get_storage_status,
             get_app_metadata,
             window_minimize,
@@ -2478,6 +2736,7 @@ fn main() {
             quick_add_task,
             close_quick_add,
             pick_sync_folder,
+            pick_legacy_import_file,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
@@ -2488,6 +2747,7 @@ mod tests {
     use super::{
         compare_timestamps, compute_storage_status_from_local_dir, copy_shared_data_from_source,
         generate_device_id, hidden_ticket_schema_version, is_valid_hostname,
+        merge_missing_sync_folder, normalize_path_value,
         merge_hidden_tickets_documents, merge_task_documents, migrate_legacy_secret_value,
         normalize_hidden_tickets_document, normalize_local_settings, normalize_task_document,
         parse_task_document_content, AppError, CredentialStore, HiddenTicketState,
@@ -2619,6 +2879,43 @@ mod tests {
         });
         assert!(normalized.sync_folder.is_none());
         assert!(normalized.device_id.is_some());
+    }
+
+    #[test]
+    fn merges_missing_sync_folder_from_imported_local_settings() {
+        let current = normalize_local_settings(LocalSettings {
+            sync_folder: None,
+            device_id: Some("device-a".to_string()),
+            startup_legacy_import_done: true,
+        });
+        let imported = normalize_local_settings(LocalSettings {
+            sync_folder: Some("C:\\Sync\\TaskTracker".to_string()),
+            device_id: Some("device-b".to_string()),
+            startup_legacy_import_done: false,
+        });
+
+        let merged = merge_missing_sync_folder(&current, &imported);
+        assert_eq!(merged.sync_folder, Some("C:\\Sync\\TaskTracker".to_string()));
+        assert_eq!(merged.device_id, current.device_id);
+        assert!(merged.startup_legacy_import_done);
+    }
+
+    #[cfg(target_os = "windows")]
+    #[test]
+    fn normalizes_file_uri_style_windows_paths() {
+        assert_eq!(
+            normalize_path_value("file:///C:/Users/john/Sync/TaskTracker"),
+            "C:\\Users\\john\\Sync\\TaskTracker".to_string()
+        );
+    }
+
+    #[cfg(not(target_os = "windows"))]
+    #[test]
+    fn normalizes_file_uri_style_unix_paths() {
+        assert_eq!(
+            normalize_path_value("file:///Users/john/Sync/TaskTracker"),
+            "/Users/john/Sync/TaskTracker".to_string()
+        );
     }
 
     #[test]

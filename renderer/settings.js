@@ -1,14 +1,18 @@
 async function initSettings() {
+  await refreshLocalSettingsDisplay();
+
+  renderStorageStatus(window.currentStorageStatus);
+  renderSyncFolderNotice(null);
+  renderAbout(window.appMetadata);
+}
+
+async function refreshLocalSettingsDisplay() {
   try {
     const settings = await window.callCommand('load_local_settings_cmd');
     updateSyncFolderDisplay(settings.sync_folder || null);
   } catch (error) {
     console.error('Failed to load local settings:', error);
   }
-
-  renderStorageStatus(window.currentStorageStatus);
-  renderSyncFolderNotice(null);
-  renderAbout(window.appMetadata);
 }
 
 function updateSyncFolderDisplay(folder) {
@@ -76,6 +80,7 @@ function renderAbout(metadata) {
 }
 
 async function applyStorageStatusResult(status) {
+  await refreshLocalSettingsDisplay();
   renderStorageStatus(status);
   renderSyncFolderNotice(status.notice || null, status.notice ? 'info' : 'info');
   if (status.notice) {
@@ -123,6 +128,19 @@ document.getElementById('btn-import-legacy-data').addEventListener('click', asyn
   } catch (error) {
     console.error('Failed to import legacy shared data:', error);
     renderSyncFolderNotice(error.message || 'Could not import legacy shared data.', 'danger');
+  }
+});
+
+document.getElementById('btn-import-legacy-file').addEventListener('click', async () => {
+  try {
+    const file = await window.callCommand('pick_legacy_import_file');
+    if (!file) return;
+
+    const status = await window.callCommand('attempt_legacy_import_from_path_cmd', { path: file });
+    await applyStorageStatusResult(status);
+  } catch (error) {
+    console.error('Failed to import from selected legacy file:', error);
+    renderSyncFolderNotice(error.message || 'Could not import the selected legacy file.', 'danger');
   }
 });
 

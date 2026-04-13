@@ -13,6 +13,7 @@ let hiddenTicketDocument = {
 let currentTickets = [];
 let seenTicketNumbers = new Set();
 let pollTimer = null;
+let hiddenTicketSaveInFlight = false;
 
 const ticketsList = document.getElementById('tickets-list');
 const ticketsStatus = document.getElementById('tickets-status');
@@ -168,6 +169,7 @@ async function toggleHideTicket(ticketNumber) {
   });
 
   try {
+    hiddenTicketSaveInFlight = true;
     const result = await window.callCommand('save_hidden_tickets', {
       document: {
         schemaVersion: hiddenTicketDocument.schemaVersion || 2,
@@ -180,8 +182,15 @@ async function toggleHideTicket(ticketNumber) {
     renderTickets();
   } catch (error) {
     ticketsStatus.textContent = error.message || 'Could not save hidden ticket state.';
-    await window.refreshStorageStatus();
-    await initializeTickets();
+    try {
+      const hiddenData = await window.callCommand('load_hidden_tickets');
+      applyHiddenTicketDocument(hiddenData);
+      renderTickets();
+    } catch (reloadError) {
+      console.error('Failed to restore hidden ticket state after save error:', reloadError);
+    }
+  } finally {
+    hiddenTicketSaveInFlight = false;
   }
 }
 
@@ -295,6 +304,9 @@ saveApiKeyBtn.addEventListener('click', async () => {
 });
 
 changeApiKeyBtn.addEventListener('click', async () => {
+  const confirmed = confirm('Clear the saved Desk365 API key from secure storage?');
+  if (!confirmed) return;
+
   try {
     await window.callCommand('clear_secure_api_key');
     document.getElementById('api-key-input').value = '';
@@ -319,6 +331,9 @@ window.addEventListener('shared-data-changed', async (event) => {
   }
 
   if (files.includes('hidden-tickets.json')) {
+    if (hiddenTicketSaveInFlight) {
+      return;
+    }
     try {
       const hiddenData = await window.callCommand('load_hidden_tickets');
       applyHiddenTicketDocument(hiddenData);

@@ -79,3 +79,7 @@ Status: approved
 ## 2026-04-13 — GitHub Releases should describe commit changes since the previous release
 Rationale: Fixed placeholder release notes are too vague to be useful, especially for personal builds that may accumulate several targeted fixes between version bumps. The release workflow now generates the body from commit subjects since the prior release tag while skipping the routine version-bump commit.
 Status: approved
+
+## 2026-04-13 — Normalize picked storage paths and allow explicit legacy-file import
+Rationale: Windows storage bugs showed that relying only on automatic legacy scanning and raw dialog path strings was too brittle. The app now normalizes dialog-picked filesystem paths, recovers missing sync-folder settings from legacy `local-settings.json`, and lets the owner explicitly import an older task/settings JSON file when needed.
+Status: approved
