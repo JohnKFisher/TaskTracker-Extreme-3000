@@ -172,6 +172,8 @@ For projects with meaningful versioning, milestone releases, or durable rollback
 - Do not bump the minor or major version without my explicit approval. Bumps can be suggested with brief reasoning, but not applied automatically.
 - App marketing version and build number must come from source-controlled files, not from local caches, `.build/`, DerivedData, or other untracked machine-specific state. Before any release build, report the exact version that will be produced and stop if local state could alter it. Update versioning files in the same commit as the build change.
 - Prefer deterministic versioning that reproduces the same app version/build from the same committed source.
+- For projects that publish through CI, prefer workflows where a pushed checked-in version bump on `main` automatically creates or updates the corresponding GitHub Release. Do not require a separate manual tag push unless the project brief or decision log explicitly prefers tag-driven releases.
+
 
 ## Performance, Reliability, and Output Quality
 
@@ -417,12 +419,14 @@ This applies to:
 - do not mutate tracked version files or other tracked source during CI
 
 `release.yml`:
-- trigger on push of tags matching `v*`
+- trigger on push to `main` when the checked-in version source-of-truth file changes (for example `version.json`, or the project’s equivalent tracked version file)
+- also support `workflow_dispatch`
 - set explicit least-privilege permissions:
     permissions:
       contents: write
-- publish release assets to GitHub Releases from the tagged build
-- build from the committed tag state, not local/generated state
+- publish release assets to GitHub Releases for the checked-in app version from committed source
+- derive the release tag/version name from the tracked version source-of-truth in the repo, not from local/generated state
+
 
 ### GitHub Actions runtime rules
 
@@ -574,12 +578,18 @@ For native Windows apps:
 ### Release flow default
 
 Default release flow is:
-1. push to `main` for CI artifacts
-2. create and push a `vX.Y.Z` tag for GitHub Release assets
+1. bump the checked-in app version/build in source control
+2. push to `main`
+3. let CI create or update the GitHub Release for that version automatically
+
+Treat a committed version bump as an intentional “done for now / publish”
+signal unless the project brief or decision log says otherwise.
 
 Do **not** rewrite or force-move an existing release tag unless I
-explicitly approve it. If a release fix is needed after a release tag is
-already published, create a new patch version and tag instead.
+explicitly approve it. If a release fix is needed after a published
+version already exists, create a new patch version/build and publish that
+instead.
+
 
 ### Verification required for CI / release work
 
