@@ -830,6 +830,89 @@ fn normalize_hidden_tickets_document(mut document: HiddenTicketsDocument) -> Hid
     document
 }
 
+fn parse_hidden_ticket_state_value(value: &Value, fallback: &str) -> Option<HiddenTicketState> {
+    let ticket_number = string_field(value, &["ticketNumber", "ticket_number", "id"])?;
+    let hidden = value
+        .get("hidden")
+        .and_then(Value::as_bool)
+        .unwrap_or(true);
+    let updated_at = string_field(value, &["updatedAt", "updated_at"])
+        .unwrap_or_else(|| fallback.to_string());
+
+    Some(HiddenTicketState {
+        ticket_number,
+        hidden,
+        updated_at,
+    })
+}
+
+fn parse_hidden_tickets_document_content(
+    path: &Path,
+    content: &str,
+) -> Result<HiddenTicketsDocument, AppError> {
+    if let Ok(document) = serde_json::from_str::<HiddenTicketsDocument>(content) {
+        return Ok(normalize_hidden_tickets_document(document));
+    }
+
+    let value: Value = serde_json::from_str(content).map_err(|err| AppError {
+        code: "invalid_data".to_string(),
+        message: format!("Could not parse {}: {err}", path.display()),
+    })?;
+
+    let fallback = current_iso_timestamp();
+    let mut document = HiddenTicketsDocument::default();
+    match &value {
+        Value::Array(entries) => {
+            if entries.iter().all(|entry| entry.as_str().is_some()) {
+                document.tickets = entries
+                    .iter()
+                    .filter_map(Value::as_str)
+                    .map(ToOwned::to_owned)
+                    .collect();
+            } else {
+                document.states = entries
+                    .iter()
+                    .filter_map(|entry| parse_hidden_ticket_state_value(entry, &fallback))
+                    .collect();
+            }
+        }
+        Value::Object(_) => {
+            document.schema_version = value
+                .get("schemaVersion")
+                .and_then(Value::as_u64)
+                .map(|version| version as u32)
+                .unwrap_or(hidden_ticket_schema_version());
+            document.revision = value.get("revision").and_then(Value::as_u64).unwrap_or(0);
+            document.updated_at = string_field(&value, &["updatedAt", "updated_at"]);
+            document.updated_by = string_field(&value, &["updatedBy", "updated_by"]);
+            document.tickets = value
+                .get("tickets")
+                .and_then(Value::as_array)
+                .map(|entries| {
+                    entries
+                        .iter()
+                        .filter_map(Value::as_str)
+                        .map(ToOwned::to_owned)
+                        .collect()
+                })
+                .unwrap_or_default();
+            document.states = value
+                .get("states")
+                .and_then(Value::as_array)
+                .map(|entries| {
+                    entries
+                        .iter()
+                        .filter_map(|entry| parse_hidden_ticket_state_value(entry, &fallback))
+                        .collect()
+                })
+                .unwrap_or_default();
+        }
+        _ => {}
+    }
+
+    Ok(normalize_hidden_tickets_document(document))
+}
+
 fn normalize_ticket_settings_value(value: &Value) -> TicketSettingsDocument {
     TicketSettingsDocument {
         schema_version: ticket_settings_schema_version(),
@@ -964,7 +1047,10 @@ fn read_hidden_tickets_document(
     app: &AppHandle,
 ) -> Result<HiddenTicketsDocument, AppError> {
     let path = shared_data_path(HIDDEN_TICKETS_FILE, settings, app)?;
-    Ok(normalize_hidden_tickets_document(read_or_default(&path)?))
+    match read_text_file(&path)? {
+        Some(content) => parse_hidden_tickets_document_content(&path, &content),
+        None => Ok(HiddenTicketsDocument::default()),
+    }
 }
 
 fn save_hidden_tickets_document(
@@ -2797,8 +2883,9 @@ mod tests {
         merge_missing_sync_folder, normalize_path_value,
         merge_hidden_tickets_documents, merge_task_documents, migrate_legacy_secret_value,
         normalize_hidden_tickets_document, normalize_local_settings, normalize_task_document,
-        parse_task_document_content, AppError, CredentialStore, HiddenTicketState,
-        HiddenTicketsDocument, LocalSettings, TaskDocument, TaskItem, TaskTombstone,
+        parse_hidden_tickets_document_content, parse_task_document_content, AppError,
+        CredentialStore, HiddenTicketState, HiddenTicketsDocument, LocalSettings, TaskDocument,
+        TaskItem, TaskTombstone,
     };
     use serde_json::json;
     use std::cmp::Ordering;
@@ -2963,6 +3050,20 @@ mod tests {
             normalize_path_value("file:///Users/john/Sync/TaskTracker"),
             "/Users/john/Sync/TaskTracker".to_string()
         );
+    }
+
+    #[test]
+    fn parses_raw_hidden_ticket_array_content() {
+        let path = PathBuf::from("hidden-tickets.json");
+        let document = parse_hidden_tickets_document_content(
+            &path,
+            r#"["1001","1002"]"#,
+        )
+        .unwrap();
+
+        assert_eq!(document.tickets, vec!["1001".to_string(), "1002".to_string()]);
+        assert_eq!(document.states.len(), 2);
+        assert!(document.states.iter().all(|state| state.hidden));
     }
 
     #[test]

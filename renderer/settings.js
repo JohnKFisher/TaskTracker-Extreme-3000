@@ -9,9 +9,10 @@ async function initSettings() {
 async function refreshLocalSettingsDisplay() {
   try {
     const settings = await window.callCommand('load_local_settings_cmd');
-    updateSyncFolderDisplay(settings.sync_folder || null);
+    updateSyncFolderDisplay(settings.syncFolder || null);
   } catch (error) {
     console.error('Failed to load local settings:', error);
+    renderSyncFolderNotice(error.message || 'Could not load local settings.', 'danger');
   }
 }
 
@@ -95,13 +96,14 @@ document.getElementById('btn-browse-sync-folder').addEventListener('click', asyn
     if (!folder) return;
 
     const status = await window.callCommand('save_local_settings_cmd', {
-      settings: { sync_folder: folder },
+      settings: { syncFolder: folder },
     });
 
     updateSyncFolderDisplay(folder);
     await applyStorageStatusResult(status);
   } catch (error) {
     console.error('Failed to save sync folder:', error);
+    renderSyncFolderNotice(error.message || 'Could not save the sync folder.', 'danger');
   }
 });
 
@@ -111,13 +113,14 @@ document.getElementById('btn-clear-sync-folder').addEventListener('click', async
 
   try {
     const status = await window.callCommand('save_local_settings_cmd', {
-      settings: { sync_folder: null },
+      settings: { syncFolder: null },
     });
 
     updateSyncFolderDisplay(null);
     await applyStorageStatusResult(status);
   } catch (error) {
     console.error('Failed to clear sync folder:', error);
+    renderSyncFolderNotice(error.message || 'Could not clear the sync folder.', 'danger');
   }
 });
 
