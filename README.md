@@ -35,13 +35,18 @@ Shared-data files are plain JSON:
 - `config.json` (Desk365 hostname only, no secret)
 - `hidden-tickets.json`
 
+These shared files now carry revision metadata so multiple running machines can reconcile changes more safely.
+
 Machine-specific data stays local and is never synced:
 - `local-settings.json`
 - `window-state.json`
 
 Desk365 API keys are **not** stored in `config.json`. They are stored in the operating system’s secure credential store.
+Desk365 ticket payloads are also **not** stored in the shared folder. Each machine fetches its own live tickets directly from Desk365 on the normal refresh cadence.
 
-If you configure a sync folder, shared data is written there instead of the local app-data folder. If that folder later becomes unavailable, the app will pause shared-data access and show a warning instead of silently falling back to a different location.
+If you configure a sync folder, shared data is written there instead of the local app-data folder. If that folder later becomes unavailable, the app will pause shared-data access and show a warning instead of silently falling back to a different location. Shared-folder updates are watched for near-immediate refresh, with a 5-minute reconciliation pass as a fallback when cloud sync lags or a file event is missed.
+
+When you pick a new sync folder, the app can import existing shared JSON from the current app-data location or known legacy pre-Tauri locations so you do not have to rebuild your setup by hand.
 
 ## First-Run Desk365 Setup
 
@@ -114,4 +119,5 @@ npm run build
 
 - Requires a Desk365 account for ticket integration; the task board and notes still work without it
 - Shared-data features depend on the configured sync folder remaining reachable
+- Notes are still one shared text blob, so simultaneous edits on two machines can require a manual retry after a conflict warning
 - Tested primarily on my own machines; your mileage may vary

@@ -231,11 +231,27 @@ textarea:disabled {
 .app-banner {
   margin: 8px 10px 0;
   padding: 10px 12px;
-  border: 1px solid rgba(180, 35, 24, 0.22);
   border-radius: 10px;
-  background: var(--danger-soft);
   color: var(--text-primary);
   line-height: 1.4;
+}
+
+.app-banner.info,
+.info-card-message.info {
+  border: 1px solid rgba(15, 108, 189, 0.22);
+  background: var(--accent-soft);
+}
+
+.app-banner.warning,
+.info-card-message.warning {
+  border: 1px solid rgba(152, 111, 11, 0.22);
+  background: rgba(152, 111, 11, 0.14);
+}
+
+.app-banner.danger,
+.info-card-message {
+  border: 1px solid rgba(180, 35, 24, 0.22);
+  background: var(--danger-soft);
 }
 
 .hidden {
@@ -666,7 +682,6 @@ textarea:disabled {
 .info-card-message {
   padding: 10px;
   border-radius: 8px;
-  background: var(--danger-soft);
   color: var(--text-primary);
   line-height: 1.45;
 }

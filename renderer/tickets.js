@@ -2,7 +2,14 @@ let desk365Base = '';
 const POLL_INTERVAL = 5 * 60 * 1000;
 
 let ticketState = null;
-let hiddenTickets = [];
+let hiddenTicketDocument = {
+  schemaVersion: 2,
+  revision: 0,
+  updatedAt: null,
+  updatedBy: null,
+  tickets: [],
+  states: [],
+};
 let currentTickets = [];
 let seenTicketNumbers = new Set();
 let pollTimer = null;
@@ -25,6 +32,14 @@ function startPolling() {
   pollTimer = setInterval(fetchAndRenderTickets, POLL_INTERVAL);
 }
 
+function hiddenTicketNumbers() {
+  return new Set(
+    (hiddenTicketDocument.states || [])
+      .filter((state) => state.hidden)
+      .map((state) => state.ticketNumber),
+  );
+}
+
 function setTicketSetupVisible(visible) {
   apiKeySetup.classList.toggle('hidden', !visible);
 }
@@ -42,21 +57,33 @@ function setDesk365Base(domain) {
   desk365Base = domain ? `https://${domain}/app/tickets/ticketdetails?tktNum=` : '';
 }
 
+function applyHiddenTicketDocument(document) {
+  hiddenTicketDocument = {
+    schemaVersion: document.schemaVersion || 2,
+    revision: document.revision || 0,
+    updatedAt: document.updatedAt || null,
+    updatedBy: document.updatedBy || null,
+    tickets: Array.isArray(document.tickets) ? document.tickets : [],
+    states: Array.isArray(document.states) ? document.states : [],
+  };
+}
+
 async function loadTicketState() {
   ticketState = await window.callCommand('load_ticket_settings');
   const hiddenData = await window.callCommand('load_hidden_tickets');
-  hiddenTickets = hiddenData.tickets || [];
+  applyHiddenTicketDocument(hiddenData);
   setDesk365Base(ticketState.desk365Domain || '');
   document.getElementById('domain-input').value = ticketState.desk365Domain || '';
 }
 
 function renderTickets() {
   const showHidden = showHiddenCheckbox.checked;
+  const hiddenNumbers = hiddenTicketNumbers();
   ticketsList.innerHTML = '';
 
   const filtered = showHidden
     ? currentTickets
-    : currentTickets.filter((ticket) => !hiddenTickets.includes(ticket.TicketNumber));
+    : currentTickets.filter((ticket) => !hiddenNumbers.has(ticket.TicketNumber));
 
   if (!filtered.length) {
     ticketsList.innerHTML = '<div class="empty-state">No tickets to show</div>';
@@ -64,7 +91,7 @@ function renderTickets() {
   }
 
   filtered.forEach((ticket) => {
-    const isHidden = hiddenTickets.includes(ticket.TicketNumber);
+    const isHidden = hiddenNumbers.has(ticket.TicketNumber);
     const card = document.createElement('div');
     card.className = `ticket-card${isHidden ? ' hidden-ticket' : ''}`;
 
@@ -130,20 +157,26 @@ function renderTickets() {
 async function toggleHideTicket(ticketNumber) {
   if (!(window.currentStorageStatus && window.currentStorageStatus.sharedDataAvailable)) return;
 
-  const index = hiddenTickets.indexOf(ticketNumber);
-  if (index >= 0) {
-    hiddenTickets.splice(index, 1);
-  } else {
-    hiddenTickets.push(ticketNumber);
-  }
+  const existing = Array.isArray(hiddenTicketDocument.states) ? [...hiddenTicketDocument.states] : [];
+  const updatedAt = new Date().toISOString();
+  const nextHidden = !hiddenTicketNumbers().has(ticketNumber);
+  const filtered = existing.filter((state) => state.ticketNumber !== ticketNumber);
+  filtered.push({
+    ticketNumber,
+    hidden: nextHidden,
+    updatedAt,
+  });
 
   try {
-    await window.callCommand('save_hidden_tickets', {
+    const result = await window.callCommand('save_hidden_tickets', {
       document: {
-        schemaVersion: 1,
-        tickets: hiddenTickets,
+        schemaVersion: hiddenTicketDocument.schemaVersion || 2,
+        revision: hiddenTicketDocument.revision || 0,
+        updatedAt,
+        states: filtered,
       },
     });
+    applyHiddenTicketDocument(result.document);
     renderTickets();
   } catch (error) {
     ticketsStatus.textContent = error.message || 'Could not save hidden ticket state.';
@@ -261,29 +294,49 @@ saveApiKeyBtn.addEventListener('click', async () => {
   }
 });
 
-document.getElementById('api-key-input').addEventListener('keydown', (event) => {
-  if (event.key === 'Enter') saveApiKeyBtn.click();
+changeApiKeyBtn.addEventListener('click', async () => {
+  try {
+    await window.callCommand('clear_secure_api_key');
+    document.getElementById('api-key-input').value = '';
+    await initializeTickets();
+  } catch (error) {
+    ticketsStatus.textContent = error.message || 'Could not clear the saved API key.';
+  }
 });
 
 refreshBtn.addEventListener('click', fetchAndRenderTickets);
 showHiddenCheckbox.addEventListener('change', renderTickets);
 
-changeApiKeyBtn.addEventListener('click', () => {
-  setTicketSetupVisible(true);
-  document.getElementById('api-key-input').focus();
+window.addEventListener('storage-status-changed', async () => {
+  await initializeTickets();
 });
 
-window.addEventListener('storage-status-changed', async (event) => {
-  const status = event.detail;
-  const storageAvailable = Boolean(status && status.sharedDataAvailable);
-  setTicketControlsEnabled(storageAvailable);
-
-  if (!storageAvailable) {
-    stopPolling();
-    ticketsStatus.textContent = status.message || 'Desk365 settings are unavailable while shared data is offline.';
+window.addEventListener('shared-data-changed', async (event) => {
+  const files = event.detail && Array.isArray(event.detail.files) ? event.detail.files : [];
+  if (files.includes('config.json')) {
+    await initializeTickets();
+    return;
   }
 
-  await initializeTickets();
+  if (files.includes('hidden-tickets.json')) {
+    try {
+      const hiddenData = await window.callCommand('load_hidden_tickets');
+      applyHiddenTicketDocument(hiddenData);
+      renderTickets();
+    } catch (error) {
+      ticketsStatus.textContent = error.message || 'Could not refresh hidden ticket state.';
+    }
+  }
+});
+
+window.addEventListener('shared-data-reconcile', async () => {
+  try {
+    const hiddenData = await window.callCommand('load_hidden_tickets');
+    applyHiddenTicketDocument(hiddenData);
+    renderTickets();
+  } catch (error) {
+    console.error('Failed to reconcile hidden tickets:', error);
+  }
 });
 
 initializeTickets();

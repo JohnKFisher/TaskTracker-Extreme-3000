@@ -1,12 +1,39 @@
 let tasks = [];
+let taskDocumentState = {
+  schemaVersion: 2,
+  revision: 0,
+  updatedAt: null,
+  updatedBy: null,
+  tombstones: [],
+};
 let taskStorageWritable = true;
+let tasksDirty = false;
+let pendingRemoteTaskReload = false;
 const COLUMNS = ['standing', 'priority', 'inprogress', 'todo', 'rainyday', 'done'];
 
 function taskDocument() {
   return {
-    schemaVersion: 1,
+    schemaVersion: taskDocumentState.schemaVersion || 2,
+    revision: taskDocumentState.revision || 0,
+    updatedAt: new Date().toISOString(),
     tasks,
+    tombstones: taskDocumentState.tombstones || [],
   };
+}
+
+function applyTaskDocument(document) {
+  taskDocumentState = {
+    schemaVersion: document.schemaVersion || 2,
+    revision: document.revision || 0,
+    updatedAt: document.updatedAt || null,
+    updatedBy: document.updatedBy || null,
+    tombstones: Array.isArray(document.tombstones) ? document.tombstones : [],
+  };
+  tasks = Array.isArray(document.tasks) ? document.tasks : [];
+}
+
+function markTasksDirty() {
+  tasksDirty = true;
 }
 
 function isTaskStorageWritable() {
@@ -30,13 +57,35 @@ function alphaSortColumn(column) {
   });
 }
 
-async function loadTasks() {
+function recordTaskTombstone(taskId, updatedAt) {
+  const tombstones = Array.isArray(taskDocumentState.tombstones) ? [...taskDocumentState.tombstones] : [];
+  const filtered = tombstones.filter((entry) => entry.id !== taskId);
+  filtered.push({
+    id: taskId,
+    updatedAt,
+  });
+  taskDocumentState.tombstones = filtered;
+}
+
+async function loadTasks(options = {}) {
+  const { silent = false } = options;
+
+  if (tasksDirty) {
+    pendingRemoteTaskReload = true;
+    return;
+  }
+
   try {
     const data = await window.callCommand('load_tasks');
-    tasks = Array.isArray(data.tasks) ? data.tasks : [];
+    applyTaskDocument(data);
+    tasksDirty = false;
+    pendingRemoteTaskReload = false;
   } catch (error) {
     tasks = [];
     console.error('Failed to load tasks:', error);
+    if (!silent) {
+      window.showAppNotice(error.message || 'Could not load shared tasks.', 'danger', 7000);
+    }
   }
 
   renderAllColumns();
@@ -44,14 +93,28 @@ async function loadTasks() {
 }
 
 async function persistTasks() {
-  if (!isTaskStorageWritable()) return;
+  if (!isTaskStorageWritable() || !tasksDirty) return;
 
   try {
-    await window.callCommand('save_tasks', { document: taskDocument() });
+    const result = await window.callCommand('save_tasks', { document: taskDocument() });
+    applyTaskDocument(result.document);
+    tasksDirty = false;
+    if (Array.isArray(result.conflictIds) && result.conflictIds.length > 0) {
+      window.showAppNotice(
+        `${result.conflictIds.length} task change${result.conflictIds.length === 1 ? '' : 's'} merged from another machine.`,
+        'warning',
+        8000,
+      );
+    }
+    renderAllColumns();
+    if (pendingRemoteTaskReload) {
+      pendingRemoteTaskReload = false;
+      await loadTasks({ silent: true });
+    }
   } catch (error) {
     console.error('Failed to save tasks:', error);
     await window.refreshStorageStatus();
-    await loadTasks();
+    await loadTasks({ silent: true });
   }
 }
 
@@ -139,10 +202,16 @@ function createTaskCard(task) {
     input.value = task.title;
     input.addEventListener('click', (e) => e.stopPropagation());
     input.addEventListener('dblclick', (e) => e.stopPropagation());
+    input.addEventListener('input', () => {
+      task.title = input.value;
+      task.updatedAt = new Date().toISOString();
+      markTasksDirty();
+    });
     input.addEventListener('keydown', (e) => {
       if (e.key === 'Enter') {
         task.title = input.value.trim() || task.title;
         task.updatedAt = new Date().toISOString();
+        markTasksDirty();
         saveTasks();
         collapseCard(card, task);
       }
@@ -160,6 +229,7 @@ function createTaskCard(task) {
     notesArea.addEventListener('input', () => {
       task.notes = notesArea.value;
       task.updatedAt = new Date().toISOString();
+      markTasksDirty();
       saveTasks();
     });
     card.appendChild(notesArea);
@@ -175,17 +245,19 @@ function createTaskCard(task) {
 
 function addTask(title, column) {
   const columnTasks = tasks.filter((task) => task.column === column);
+  const now = new Date().toISOString();
   tasks.push({
     id: `t_${Date.now()}`,
     title,
     notes: '',
     column,
     order: columnTasks.length,
-    createdAt: new Date().toISOString(),
-    updatedAt: new Date().toISOString(),
+    createdAt: now,
+    updatedAt: now,
   });
 
   alphaSortColumn(column);
+  markTasksDirty();
   saveTasks();
   renderAllColumns();
 }
@@ -200,7 +272,10 @@ function deleteTask(id) {
     return;
   }
 
+  const updatedAt = new Date().toISOString();
   tasks = tasks.filter((entry) => entry.id !== id);
+  recordTaskTombstone(id, updatedAt);
+  markTasksDirty();
   saveTasks();
   renderAllColumns();
 }
@@ -209,14 +284,17 @@ document.getElementById('btn-clear-done').addEventListener('click', (event) => {
   event.stopPropagation();
   if (!isTaskStorageWritable()) return;
 
-  const doneCount = tasks.filter((task) => task.column === 'done').length;
-  if (!doneCount) return;
+  const doneTasks = tasks.filter((task) => task.column === 'done');
+  if (!doneTasks.length) return;
 
-  if (!confirm(`Clear ${doneCount} done ${doneCount === 1 ? 'task' : 'tasks'}?`)) {
+  if (!confirm(`Clear ${doneTasks.length} done ${doneTasks.length === 1 ? 'task' : 'tasks'}?`)) {
     return;
   }
 
+  const updatedAt = new Date().toISOString();
+  doneTasks.forEach((task) => recordTaskTombstone(task.id, updatedAt));
   tasks = tasks.filter((task) => task.column !== 'done');
+  markTasksDirty();
   saveTasks();
   renderAllColumns();
 });
@@ -248,7 +326,7 @@ COLUMNS.forEach((column) => {
     dragClass: 'sortable-drag',
     onEnd: async (event) => {
       if (!isTaskStorageWritable()) {
-        await loadTasks();
+        await loadTasks({ silent: true });
         return;
       }
 
@@ -259,6 +337,7 @@ COLUMNS.forEach((column) => {
       if (task) {
         task.column = newColumn;
         task.updatedAt = new Date().toISOString();
+        markTasksDirty();
       }
 
       [event.from.dataset.column, newColumn].forEach((col) => alphaSortColumn(col));
@@ -278,6 +357,7 @@ function collapseCard(card, task) {
     if (task) {
       task.title = titleInput.value.trim() || task.title;
       task.updatedAt = new Date().toISOString();
+      markTasksDirty();
     }
     const newTitle = document.createElement('span');
     newTitle.className = 'task-title';
@@ -302,6 +382,7 @@ document.addEventListener('click', (event) => {
 document.getElementById('btn-sort-alpha').addEventListener('click', () => {
   if (!isTaskStorageWritable()) return;
   COLUMNS.forEach((column) => alphaSortColumn(column));
+  markTasksDirty();
   saveTasks();
   renderAllColumns();
 });
@@ -313,12 +394,31 @@ window.addEventListener('storage-status-changed', (event) => {
   renderAllColumns();
 });
 
+window.addEventListener('shared-data-changed', async (event) => {
+  const files = event.detail && Array.isArray(event.detail.files) ? event.detail.files : [];
+  if (!files.includes('tasks.json')) return;
+
+  if (tasksDirty) {
+    pendingRemoteTaskReload = true;
+    return;
+  }
+
+  await loadTasks({ silent: true });
+});
+
+window.addEventListener('shared-data-reconcile', async () => {
+  if (!tasksDirty) {
+    await loadTasks({ silent: true });
+  }
+});
+
 window.registerBeforeQuitHook(() => {
   document.querySelectorAll('.task-card.expanded').forEach((card) => {
     const task = tasks.find((entry) => entry.id === card.dataset.id);
     collapseCard(card, task);
   });
 });
+
 window.registerSaveHook(persistTasks);
 
 loadTasks();

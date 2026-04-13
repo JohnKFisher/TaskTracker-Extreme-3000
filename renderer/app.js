@@ -2,9 +2,13 @@ const invoke = window.__TAURI__.core.invoke;
 const listen = window.__TAURI__.event.listen;
 const currentWindow = window.__TAURI__.window.getCurrentWindow();
 const isMacPlatform = /\bMac\b/.test(navigator.userAgent);
+const SHARED_DATA_RECONCILE_INTERVAL = 5 * 60 * 1000;
 const beforeQuitHooks = [];
 const saveHooks = [];
 let quitInProgress = false;
+let currentAppNotice = null;
+let noticeTimer = null;
+let reconcileTimer = null;
 
 window.currentStorageStatus = null;
 window.appMetadata = null;
@@ -51,6 +55,47 @@ function updateTabCount(tabName, count) {
 
 window.updateTabCount = updateTabCount;
 
+function renderTopBanner() {
+  const banner = document.getElementById('storage-banner');
+  banner.classList.remove('info', 'warning', 'danger');
+
+  if (window.currentStorageStatus && (window.currentStorageStatus.mode === 'syncUnavailable' || window.currentStorageStatus.mode === 'localUnavailable')) {
+    banner.textContent = window.currentStorageStatus.message || 'Shared data is currently unavailable.';
+    banner.classList.add('danger');
+    banner.classList.remove('hidden');
+    return;
+  }
+
+  if (currentAppNotice && currentAppNotice.message) {
+    banner.textContent = currentAppNotice.message;
+    banner.classList.add(currentAppNotice.tone || 'info');
+    banner.classList.remove('hidden');
+    return;
+  }
+
+  banner.textContent = '';
+  banner.classList.add('hidden');
+}
+
+window.showAppNotice = function showAppNotice(message, tone = 'info', timeoutMs = 7000) {
+  currentAppNotice = { message, tone };
+  if (noticeTimer) clearTimeout(noticeTimer);
+  if (timeoutMs > 0) {
+    noticeTimer = setTimeout(() => {
+      currentAppNotice = null;
+      renderTopBanner();
+    }, timeoutMs);
+  }
+  renderTopBanner();
+};
+
+window.clearAppNotice = function clearAppNotice() {
+  currentAppNotice = null;
+  if (noticeTimer) clearTimeout(noticeTimer);
+  noticeTimer = null;
+  renderTopBanner();
+};
+
 function setActiveTab(tabName, section) {
   document.querySelectorAll('.tab').forEach((tab) => {
     const active = tab.dataset.tab === tabName;
@@ -71,17 +116,8 @@ function setActiveTab(tabName, section) {
 window.setActiveTab = setActiveTab;
 
 function renderStorageBanner(status) {
-  const banner = document.getElementById('storage-banner');
   window.currentStorageStatus = status;
-
-  if (status.mode === 'syncUnavailable' || status.mode === 'localUnavailable') {
-    banner.textContent = status.message || 'Shared data is currently unavailable.';
-    banner.classList.remove('hidden');
-  } else {
-    banner.textContent = '';
-    banner.classList.add('hidden');
-  }
-
+  renderTopBanner();
   window.dispatchEvent(new CustomEvent('storage-status-changed', { detail: status }));
 }
 
@@ -117,6 +153,14 @@ window.refreshAppMetadata = async function refreshAppMetadata() {
 window.openExternal = async function openExternal(url) {
   return callCommand('open_external_url', { url });
 };
+
+function startSharedDataReconcile() {
+  if (reconcileTimer) clearInterval(reconcileTimer);
+  reconcileTimer = setInterval(async () => {
+    await window.refreshStorageStatus();
+    window.dispatchEvent(new CustomEvent('shared-data-reconcile'));
+  }, SHARED_DATA_RECONCILE_INTERVAL);
+}
 
 async function saveAndQuit() {
   if (quitInProgress) return;
@@ -209,6 +253,12 @@ listen('tasks-updated', () => {
   if (typeof loadTasks === 'function') loadTasks();
 });
 
+listen('shared-data-changed', (event) => {
+  window.dispatchEvent(new CustomEvent('shared-data-changed', {
+    detail: event.payload || { files: [] },
+  }));
+});
+
 listen('navigate-to-tab', (event) => {
   const payload = event.payload || {};
   setActiveTab(payload.tab || 'settings', payload.section);
@@ -225,3 +275,5 @@ listen('app-close-requested', async () => {
 Promise.all([window.refreshStorageStatus(), window.refreshAppMetadata()]).catch((error) => {
   console.error('Failed to initialize app state:', error);
 });
+
+startSharedDataReconcile();

@@ -7,6 +7,7 @@ async function initSettings() {
   }
 
   renderStorageStatus(window.currentStorageStatus);
+  renderSyncFolderNotice(null);
   renderAbout(window.appMetadata);
 }
 
@@ -50,6 +51,21 @@ function renderStorageStatus(status) {
   }
 }
 
+function renderSyncFolderNotice(message, tone = 'info') {
+  const notice = document.getElementById('sync-folder-result');
+  if (!message) {
+    notice.classList.add('hidden');
+    notice.classList.remove('info', 'warning', 'danger');
+    notice.textContent = '';
+    return;
+  }
+
+  notice.textContent = message;
+  notice.classList.remove('hidden');
+  notice.classList.remove('info', 'warning', 'danger');
+  notice.classList.add(tone);
+}
+
 function renderAbout(metadata) {
   if (!metadata) return;
 
@@ -70,6 +86,10 @@ document.getElementById('btn-browse-sync-folder').addEventListener('click', asyn
 
     updateSyncFolderDisplay(folder);
     renderStorageStatus(status);
+    renderSyncFolderNotice(status.notice || null, status.notice ? 'info' : 'info');
+    if (status.notice) {
+      window.showAppNotice(status.notice, 'info', 9000);
+    }
     await window.refreshStorageStatus();
   } catch (error) {
     console.error('Failed to save sync folder:', error);
@@ -87,6 +107,10 @@ document.getElementById('btn-clear-sync-folder').addEventListener('click', async
 
     updateSyncFolderDisplay(null);
     renderStorageStatus(status);
+    renderSyncFolderNotice(status.notice || null, status.notice ? 'info' : 'info');
+    if (status.notice) {
+      window.showAppNotice(status.notice, 'info', 9000);
+    }
     await window.refreshStorageStatus();
   } catch (error) {
     console.error('Failed to clear sync folder:', error);

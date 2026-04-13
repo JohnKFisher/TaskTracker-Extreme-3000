@@ -59,3 +59,11 @@ Status: approved
 ## 2026-04-12 — Treat version bumps on main as release-publish triggers
 Rationale: For this repo, increasing the checked-in app version means the work is intentionally ready to publish for now. Releasing directly from `main` when `version.json` changes matches that workflow better than requiring a separate manual tag push.
 Status: approved
+
+## 2026-04-13 — Keep Desk365 ticket payloads machine-local while syncing only shared task state
+Rationale: Tasks, notes, Desk365 hostname config, and hidden-ticket state benefit from cross-machine sharing, but live Desk365 ticket payloads are fresher and less collision-prone when each machine fetches them directly. This keeps shared storage smaller and avoids turning the sync folder into a ticket cache.
+Status: approved
+
+## 2026-04-13 — Use revisioned shared JSON with watcher-driven refresh and conservative merge behavior
+Rationale: The shared-folder workflow now needs to tolerate two machines running at once, so the app adds document revisions, file watching, periodic reconciliation, merge-safe task/hidden-ticket saves, and one-time legacy-path import when a new sync folder is chosen. This favors convergence and visible warnings over silent overwrites.
+Status: approved
