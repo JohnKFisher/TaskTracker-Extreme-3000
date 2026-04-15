@@ -212,22 +212,51 @@ document.getElementById('title-bar-drag').addEventListener('mousedown', async (e
   }
 });
 
-const closeBtn = document.getElementById('btn-close');
-if (isMacPlatform) {
-  closeBtn.title = 'Save and quit';
-  closeBtn.setAttribute('aria-label', 'Save and quit');
-} else {
-  closeBtn.title = 'Hide to tray';
-  closeBtn.setAttribute('aria-label', 'Hide to tray');
+function confirmQuit() {
+  return new Promise((resolve) => {
+    const overlay = document.createElement('div');
+    overlay.className = 'confirm-overlay';
+    const dialog = document.createElement('div');
+    dialog.className = 'confirm-dialog';
+    dialog.setAttribute('role', 'dialog');
+    dialog.setAttribute('aria-modal', 'true');
+    const msg = document.createElement('div');
+    msg.className = 'confirm-message';
+    msg.textContent = 'Quit TaskTracker Extreme 3000?';
+    const actions = document.createElement('div');
+    actions.className = 'confirm-actions';
+    const cancelBtn = document.createElement('button');
+    cancelBtn.className = 'confirm-cancel';
+    cancelBtn.type = 'button';
+    cancelBtn.textContent = 'Cancel';
+    const quitBtn = document.createElement('button');
+    quitBtn.className = 'confirm-delete';
+    quitBtn.type = 'button';
+    quitBtn.textContent = 'Quit';
+    actions.appendChild(cancelBtn);
+    actions.appendChild(quitBtn);
+    dialog.appendChild(msg);
+    dialog.appendChild(actions);
+    overlay.appendChild(dialog);
+    document.body.appendChild(overlay);
+
+    function close(result) { overlay.remove(); resolve(result); }
+    cancelBtn.addEventListener('click', () => close(false));
+    quitBtn.addEventListener('click', () => close(true));
+    overlay.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape') { e.preventDefault(); close(false); }
+    });
+    cancelBtn.focus();
+  });
 }
 
-closeBtn.addEventListener('click', async () => {
-  if (isMacPlatform) {
-    await saveAndQuit();
-    return;
-  }
+const closeBtn = document.getElementById('btn-close');
+closeBtn.title = 'Save and quit';
+closeBtn.setAttribute('aria-label', 'Save and quit');
 
-  await callCommand('hide_window');
+closeBtn.addEventListener('click', async () => {
+  if (!await confirmQuit()) return;
+  await saveAndQuit();
 });
 
 const pinBtn = document.getElementById('btn-pin');
@@ -289,6 +318,7 @@ listen('navigate-to-tab', (event) => {
 
 listen('app-close-requested', async () => {
   try {
+    if (!await confirmQuit()) return;
     await saveAndQuit();
   } catch (error) {
     console.error('Failed to save and quit:', error);

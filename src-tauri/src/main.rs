@@ -2806,20 +2806,13 @@ fn main() {
             tauri::WindowEvent::CloseRequested { api, .. } => {
                 if window.label() == "main" {
                     api.prevent_close();
-                    #[cfg(target_os = "macos")]
-                    {
-                        if window.emit("app-close-requested", ()).is_err() {
-                            if let Some(main_window) =
-                                window.app_handle().get_webview_window("main")
-                            {
-                                save_window_state(&main_window);
-                            }
-                            window.app_handle().exit(0);
+                    if window.emit("app-close-requested", ()).is_err() {
+                        if let Some(main_window) =
+                            window.app_handle().get_webview_window("main")
+                        {
+                            save_window_state(&main_window);
                         }
-                    }
-                    #[cfg(not(target_os = "macos"))]
-                    {
-                        let _ = window.hide();
+                        window.app_handle().exit(0);
                     }
                 }
             }
