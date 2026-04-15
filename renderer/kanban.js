@@ -1,3 +1,6 @@
+const emptyColumnSince = new Map(); // "board:column" → timestamp when it became empty
+const AUTO_COLLAPSE_MS = 5 * 60 * 1000; // 5 minutes
+
 let tasks = [];
 let taskDocumentState = {
   schemaVersion: 2,
@@ -14,6 +17,14 @@ let dragInProgress = false;
 let activeDropTarget = null;
 const COLUMNS = ['standing', 'priority', 'inprogress', 'todo', 'rainyday', 'done'];
 const BOARDS = ['personal', 'work'];
+const COLUMN_LABELS = {
+  standing: 'Standing',
+  priority: 'Priority',
+  inprogress: 'In Progress',
+  todo: 'To-Do',
+  rainyday: 'Rainy Day',
+  done: 'Done',
+};
 
 function normalizeBoard(board) {
   return board === 'personal' ? 'personal' : 'work';
@@ -104,6 +115,63 @@ function alphaSortColumn(board, column) {
   });
 }
 
+// ── Context menu ──────────────────────────────────────────────────────────────
+
+const taskContextMenu = document.createElement('div');
+taskContextMenu.id = 'task-context-menu';
+taskContextMenu.setAttribute('role', 'menu');
+taskContextMenu.setAttribute('aria-label', 'Move task to…');
+document.body.appendChild(taskContextMenu);
+
+function dismissContextMenu() {
+  taskContextMenu.style.display = 'none';
+  taskContextMenu.innerHTML = '';
+}
+
+function showContextMenu(event, task) {
+  dismissContextMenu();
+
+  const label = document.createElement('span');
+  label.className = 'context-menu-label';
+  label.textContent = 'Move to…';
+  taskContextMenu.appendChild(label);
+
+  COLUMNS.filter((col) => col !== task.column).forEach((col) => {
+    const btn = document.createElement('button');
+    btn.className = 'context-menu-item';
+    btn.type = 'button';
+    btn.textContent = COLUMN_LABELS[col] || col;
+    btn.setAttribute('role', 'menuitem');
+    btn.addEventListener('click', () => {
+      const sourceColumn = task.column;
+      task.column = col;
+      task.updatedAt = new Date().toISOString();
+      alphaSortColumn(task.board, sourceColumn);
+      alphaSortColumn(task.board, col);
+      markTasksDirty();
+      saveTasks();
+      renderAllColumns();
+      dismissContextMenu();
+    });
+    taskContextMenu.appendChild(btn);
+  });
+
+  // Position at cursor, clamped to viewport
+  const menuWidth = 150;
+  const menuHeight = taskContextMenu.children.length * 28 + 24;
+  const x = Math.min(event.clientX, window.innerWidth - menuWidth - 8);
+  const y = Math.min(event.clientY, window.innerHeight - menuHeight - 8);
+  taskContextMenu.style.left = `${x}px`;
+  taskContextMenu.style.top = `${y}px`;
+  taskContextMenu.style.display = 'block';
+}
+
+document.addEventListener('click', dismissContextMenu);
+document.addEventListener('keydown', (e) => { if (e.key === 'Escape') dismissContextMenu(); });
+window.addEventListener('blur', dismissContextMenu);
+
+// ──────────────────────────────────────────────────────────────────────────────
+
 function recordTaskTombstone(taskId, updatedAt) {
   const tombstones = Array.isArray(taskDocumentState.tombstones) ? [...taskDocumentState.tombstones] : [];
   const filtered = tombstones.filter((entry) => entry.id !== taskId);
@@ -189,6 +257,7 @@ function renderColumn(board, column) {
   countEl.textContent = `${columnTasks.length}`;
   list.innerHTML = '';
   columnTasks.forEach((task) => list.appendChild(createTaskCard(task)));
+  updateEmptyColumnTracking(board, column, columnTasks.length);
 }
 
 function createTaskCard(task) {
@@ -293,6 +362,13 @@ function createTaskCard(task) {
       tooltip.remove();
       tooltip = null;
     }
+  });
+
+  card.addEventListener('contextmenu', (event) => {
+    if (!isTaskStorageWritable()) return;
+    event.preventDefault();
+    event.stopPropagation();
+    showContextMenu(event, task);
   });
 
   return card;
@@ -402,6 +478,47 @@ function initializeBoardControls() {
     });
   });
 }
+
+// ── Auto-collapse empty columns ───────────────────────────────────────────────
+
+function updateEmptyColumnTracking(board, column, taskCount) {
+  const key = `${board}:${column}`;
+  if (taskCount === 0) {
+    if (!emptyColumnSince.has(key)) {
+      emptyColumnSince.set(key, Date.now());
+    }
+  } else {
+    emptyColumnSince.delete(key);
+  }
+}
+
+function checkAutoCollapse() {
+  const now = Date.now();
+  emptyColumnSince.forEach((since, key) => {
+    if (now - since < AUTO_COLLAPSE_MS) return;
+    const [board, column] = key.split(':');
+    const section = document.querySelector(
+      `.kanban-section[data-board="${board}"][data-column="${column}"]`,
+    );
+    if (section && !section.classList.contains('collapsed')) {
+      section.classList.add('collapsed');
+      const header = section.querySelector('.section-header');
+      if (header) header.setAttribute('aria-expanded', 'false');
+    }
+  });
+}
+
+setInterval(checkAutoCollapse, 30 * 1000);
+
+// Called from app.js when user manually expands a section, giving it a fresh window.
+window.resetEmptyColumnTimer = function resetEmptyColumnTimer(board, column) {
+  const key = `${board}:${column}`;
+  if (emptyColumnSince.has(key)) {
+    emptyColumnSince.set(key, Date.now());
+  }
+};
+
+// ──────────────────────────────────────────────────────────────────────────────
 
 function initializeSortableBoards() {
   document.querySelectorAll('.task-list').forEach((element) => {

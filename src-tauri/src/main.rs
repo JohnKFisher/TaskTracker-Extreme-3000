@@ -2615,7 +2615,10 @@ async fn fetch_tickets(
             };
 
             json!({
-                "TicketNumber": get_field(&["TicketNumber", "ticket_number", "ticketNumber", "id"]),
+                "TicketNumber": match get_field(&["TicketNumber", "ticket_number", "ticketNumber", "id"]) {
+                    Value::Number(n) => Value::String(n.to_string()),
+                    v => v,
+                },
                 "TicketId": get_field(&["ticket_id", "TicketId", "id", "ticket_number", "TicketNumber"]),
                 "Subject": get_field(&["Subject", "subject", "title"]),
                 "Status": get_field(&["Status", "status", "ticket_status"]),

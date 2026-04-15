@@ -244,6 +244,11 @@ document.querySelectorAll('.section-header').forEach((header) => {
     section.classList.toggle('collapsed');
     const expanded = !section.classList.contains('collapsed');
     header.setAttribute('aria-expanded', expanded ? 'true' : 'false');
+    // If the user manually expands an empty column, reset its auto-collapse timer.
+    if (expanded && typeof window.resetEmptyColumnTimer === 'function') {
+      const { board, column } = section.dataset;
+      if (board && column) window.resetEmptyColumnTimer(board, column);
+    }
   }
 
   header.addEventListener('click', (event) => {

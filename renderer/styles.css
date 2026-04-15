@@ -447,6 +447,46 @@ body.kanban-dragging .task-list {
   color: var(--danger);
 }
 
+#task-context-menu {
+  position: fixed;
+  z-index: 9999;
+  display: none;
+  min-width: 140px;
+  padding: 4px 0;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  box-shadow: var(--shadow);
+  overflow: hidden;
+}
+
+.context-menu-label {
+  display: block;
+  padding: 4px 12px 2px;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  user-select: none;
+}
+
+.context-menu-item {
+  display: block;
+  width: 100%;
+  padding: 6px 12px;
+  background: none;
+  border: none;
+  text-align: left;
+  font-size: 12px;
+  color: var(--text-primary);
+  cursor: pointer;
+}
+
+.context-menu-item:hover {
+  background: var(--bg-muted);
+}
+
 .task-title-input,
 .task-notes-area,
 .new-task-input,

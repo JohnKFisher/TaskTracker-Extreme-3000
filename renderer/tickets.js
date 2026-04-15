@@ -173,7 +173,7 @@ async function toggleHideTicket(ticketNumber) {
   const nextHidden = !hiddenTicketNumbers().has(ticketNumber);
   const filtered = existing.filter((state) => state.ticketNumber !== ticketNumber);
   filtered.push({
-    ticketNumber,
+    ticketNumber: String(ticketNumber),
     hidden: nextHidden,
     updatedAt,
   });
