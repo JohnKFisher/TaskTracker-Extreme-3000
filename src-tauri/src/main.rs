@@ -726,6 +726,7 @@ fn parse_task_item_value(value: &Value, index: usize) -> Option<TaskItem> {
     let board = normalize_task_board(string_field(value, &["board"]));
     let created_at = string_field(value, &["createdAt", "created_at"]);
     let updated_at = string_field(value, &["updatedAt", "updated_at"]);
+    let moved_to_done_at = string_field(value, &["movedToDoneAt", "moved_to_done_at"]);
 
     Some(TaskItem {
         id,
@@ -736,6 +737,7 @@ fn parse_task_item_value(value: &Value, index: usize) -> Option<TaskItem> {
         board,
         created_at,
         updated_at,
+        moved_to_done_at,
     })
 }
 
@@ -2608,6 +2610,7 @@ fn quick_add_task(title: String, state: State<AppState>, app: AppHandle) -> Comm
         board,
         created_at: Some(now.clone()),
         updated_at: Some(now.clone()),
+        moved_to_done_at: None,
     });
     latest.updated_at = Some(now);
     latest.updated_by = Some(device_id);
@@ -2917,6 +2920,7 @@ mod tests {
             board: default_task_board(),
             created_at: Some(updated_at.to_string()),
             updated_at: Some(updated_at.to_string()),
+            moved_to_done_at: None,
         }
     }
 
@@ -3057,6 +3061,7 @@ mod tests {
                 board: "work".to_string(),
                 created_at: None,
                 updated_at: Some("2026-04-13T10:00:00Z".to_string()),
+                moved_to_done_at: None,
             },
             TaskItem {
                 id: "p-1".to_string(),
@@ -3067,6 +3072,7 @@ mod tests {
                 board: "personal".to_string(),
                 created_at: None,
                 updated_at: Some("2026-04-13T10:00:01Z".to_string()),
+                moved_to_done_at: None,
             },
         ];
 
