@@ -1,5 +1,6 @@
 const emptyColumnSince = new Map(); // "board:column" → timestamp when it became empty
 const AUTO_COLLAPSE_MS = 5 * 60 * 1000; // 5 minutes
+const DONE_AUTO_DELETE_MS = 8 * 24 * 60 * 60 * 1000; // 8 days
 
 let tasks = [];
 let taskDocumentState = {
@@ -144,8 +145,7 @@ function showContextMenu(event, task) {
     btn.setAttribute('role', 'menuitem');
     btn.addEventListener('click', () => {
       const sourceColumn = task.column;
-      task.column = col;
-      task.updatedAt = new Date().toISOString();
+      applyTaskColumnChange(task, col);
       alphaSortColumn(task.board, sourceColumn);
       alphaSortColumn(task.board, col);
       markTasksDirty();
@@ -205,6 +205,7 @@ async function loadTasks(options = {}) {
 
   renderAllColumns();
   updateTaskControls();
+  purgeStaleDoneTasks();
 }
 
 async function persistTasks() {
@@ -447,6 +448,43 @@ function handleAddTask(board) {
   input.focus();
 }
 
+// Apply a column move to a task, tracking done-entry timestamp.
+function applyTaskColumnChange(task, newColumn) {
+  const now = new Date().toISOString();
+  if (newColumn === 'done' && task.column !== 'done') {
+    task.movedToDoneAt = now;
+  } else if (newColumn !== 'done') {
+    task.movedToDoneAt = null;
+  }
+  task.column = newColumn;
+  task.updatedAt = now;
+}
+
+// Delete done tasks whose movedToDoneAt is older than 8 days.
+function purgeStaleDoneTasks() {
+  if (!isTaskStorageWritable()) return;
+  const cutoff = Date.now() - DONE_AUTO_DELETE_MS;
+  const stale = tasks.filter(
+    (t) => t.column === 'done'
+      && t.movedToDoneAt
+      && new Date(t.movedToDoneAt).getTime() <= cutoff,
+  );
+  if (!stale.length) return;
+  const updatedAt = new Date().toISOString();
+  stale.forEach((t) => recordTaskTombstone(t.id, updatedAt));
+  tasks = tasks.filter((t) => !stale.some((s) => s.id === t.id));
+  markTasksDirty();
+  saveTasks();
+  renderAllColumns();
+}
+
+setInterval(purgeStaleDoneTasks, 60 * 60 * 1000); // check once per hour
+
+// Expose current tasks for the archive feature.
+window.getCurrentTasksForArchive = function getCurrentTasksForArchive() {
+  return tasks.slice();
+};
+
 function initializeBoardControls() {
   document.querySelectorAll('.clear-done-btn').forEach((button) => {
     button.addEventListener('click', (event) => {
@@ -566,8 +604,7 @@ function initializeSortableBoards() {
           }
 
           task.board = newBoard;
-          task.column = newColumn;
-          task.updatedAt = new Date().toISOString();
+          applyTaskColumnChange(task, newColumn);
           markTasksDirty();
 
           [

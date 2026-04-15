@@ -164,29 +164,6 @@ document.getElementById('toggle-personal-tab').addEventListener('change', async 
   }
 });
 
-document.getElementById('btn-import-legacy-data').addEventListener('click', async () => {
-  try {
-    const status = await window.callCommand('attempt_legacy_import_cmd');
-    await applyStorageStatusResult(status);
-  } catch (error) {
-    console.error('Failed to import legacy shared data:', error);
-    renderSyncFolderNotice(error.message || 'Could not import legacy shared data.', 'danger');
-  }
-});
-
-document.getElementById('btn-import-legacy-file').addEventListener('click', async () => {
-  try {
-    const file = await window.callCommand('pick_legacy_import_file');
-    if (!file) return;
-
-    const status = await window.callCommand('attempt_legacy_import_from_path_cmd', { path: file });
-    await applyStorageStatusResult(status);
-  } catch (error) {
-    console.error('Failed to import from selected legacy file:', error);
-    renderSyncFolderNotice(error.message || 'Could not import the selected legacy file.', 'danger');
-  }
-});
-
 document.getElementById('btn-open-github').addEventListener('click', async () => {
   if (!window.appMetadata) return;
   try {

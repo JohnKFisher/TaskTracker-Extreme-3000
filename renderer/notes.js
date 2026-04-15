@@ -1,22 +1,26 @@
-const notesArea = document.getElementById('notes-area');
+const meetingArea = document.getElementById('notes-meeting');
+const generalArea = document.getElementById('notes-general');
 let notesWritable = true;
 let notesDocument = {
-  schemaVersion: 2,
+  schemaVersion: 3,
   revision: 0,
   updatedAt: null,
   updatedBy: null,
-  content: '',
+  meetingNotes: '',
+  generalNotes: '',
 };
 let notesDirty = false;
 let pendingRemoteReload = false;
 
 function applyNotesDocument(document) {
   notesDocument = {
-    schemaVersion: document.schemaVersion || 2,
+    schemaVersion: document.schemaVersion || 3,
     revision: document.revision || 0,
     updatedAt: document.updatedAt || null,
     updatedBy: document.updatedBy || null,
-    content: document.content || '',
+    // Rust normalizes legacy `content` into `generalNotes` before returning.
+    meetingNotes: document.meetingNotes || '',
+    generalNotes: document.generalNotes || '',
   };
 }
 
@@ -30,11 +34,13 @@ async function loadNotes(options = {}) {
   try {
     const data = await window.callCommand('load_notes');
     applyNotesDocument(data);
-    notesArea.value = notesDocument.content;
+    meetingArea.value = notesDocument.meetingNotes;
+    generalArea.value = notesDocument.generalNotes;
     notesDirty = false;
     pendingRemoteReload = false;
   } catch (error) {
-    notesArea.value = '';
+    meetingArea.value = '';
+    generalArea.value = '';
     console.error('Failed to load notes:', error);
     if (!silent) {
       window.showAppNotice(error.message || 'Could not load shared notes.', 'danger', 7000);
@@ -48,10 +54,12 @@ async function persistNotes() {
   try {
     const result = await window.callCommand('save_notes', {
       document: {
-        schemaVersion: notesDocument.schemaVersion || 2,
+        schemaVersion: notesDocument.schemaVersion || 3,
         revision: notesDocument.revision || 0,
         updatedAt: new Date().toISOString(),
-        content: notesArea.value,
+        content: '',
+        meetingNotes: meetingArea.value,
+        generalNotes: generalArea.value,
       },
     });
 
@@ -80,22 +88,41 @@ async function persistNotes() {
 
 const saveNotes = window.debounce(persistNotes, 350);
 
-notesArea.addEventListener('input', () => {
+function markNotesDirty() {
   notesDirty = true;
   saveNotes();
-});
+}
+
+meetingArea.addEventListener('input', markNotesDirty);
+generalArea.addEventListener('input', markNotesDirty);
 
 window.registerSaveHook(persistNotes);
+
+// Expose current notes state for the archive feature.
+window.getCurrentNotesForArchive = function getCurrentNotesForArchive() {
+  return {
+    meetingNotes: meetingArea.value,
+    generalNotes: generalArea.value,
+  };
+};
+
+function setNotesEnabled(enabled) {
+  meetingArea.disabled = !enabled;
+  generalArea.disabled = !enabled;
+  const offlinePlaceholder = 'Notes are unavailable until the configured shared-data location is reachable.';
+  if (enabled) {
+    meetingArea.placeholder = 'Notes for your next meeting...';
+    generalArea.placeholder = 'General notes...';
+  } else {
+    meetingArea.placeholder = offlinePlaceholder;
+    generalArea.placeholder = offlinePlaceholder;
+  }
+}
 
 window.addEventListener('storage-status-changed', (event) => {
   const status = event.detail;
   notesWritable = Boolean(status && status.sharedDataAvailable);
-  notesArea.disabled = !notesWritable;
-  if (!notesWritable) {
-    notesArea.placeholder = 'Notes are unavailable until the configured shared-data location is reachable.';
-  } else {
-    notesArea.placeholder = 'Type your notes here...';
-  }
+  setNotesEnabled(notesWritable);
 });
 
 window.addEventListener('shared-data-changed', async (event) => {

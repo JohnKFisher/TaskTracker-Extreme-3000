@@ -198,7 +198,10 @@
   </div>
 
   <div id="tab-notes" class="tab-content" role="tabpanel">
-    <textarea id="notes-area" placeholder="Type your notes here..." aria-label="Notes"></textarea>
+    <div class="notes-section-label">For next meeting</div>
+    <textarea id="notes-meeting" placeholder="Notes for your next meeting..." aria-label="Meeting notes"></textarea>
+    <div class="notes-section-label">General</div>
+    <textarea id="notes-general" placeholder="General notes..." aria-label="General notes"></textarea>
   </div>
 
   <div id="tab-settings" class="tab-content" role="tabpanel">
@@ -235,10 +238,7 @@
         <div class="settings-buttons">
           <button id="btn-browse-sync-folder" type="button" class="settings-btn">Browse…</button>
           <button id="btn-clear-sync-folder" type="button" class="settings-btn hidden">Clear</button>
-          <button id="btn-import-legacy-data" type="button" class="settings-btn">Try Legacy Import</button>
-          <button id="btn-import-legacy-file" type="button" class="settings-btn">Import From File…</button>
         </div>
-        <p class="settings-hint">Auto-scan checks known old app locations. Import From File lets you point directly at an older `tasks.json`, `config.json`, `hidden-tickets.json`, `notes.json`, or `local-settings.json`.</p>
         <div id="sync-folder-result" class="info-card-message info hidden"></div>
       </div>
 

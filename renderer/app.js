@@ -300,3 +300,24 @@ Promise.all([window.refreshStorageStatus(), window.refreshAppMetadata()]).catch(
 });
 
 startSharedDataReconcile();
+
+// ── Periodic archive snapshot ─────────────────────────────────────────────────
+
+async function performArchiveSnapshot() {
+  try {
+    const tasks = typeof window.getCurrentTasksForArchive === 'function'
+      ? window.getCurrentTasksForArchive() : [];
+    const notes = typeof window.getCurrentNotesForArchive === 'function'
+      ? window.getCurrentNotesForArchive() : { meetingNotes: '', generalNotes: '' };
+    await callCommand('write_archive_snapshot', {
+      tasks,
+      meetingNotes: notes.meetingNotes,
+      generalNotes: notes.generalNotes,
+    });
+  } catch (error) {
+    console.error('Failed to write archive snapshot:', error);
+  }
+}
+
+setInterval(performArchiveSnapshot, 3 * 60 * 60 * 1000); // every 3 hours
+window.registerSaveHook(performArchiveSnapshot);          // also on quit

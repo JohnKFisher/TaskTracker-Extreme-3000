@@ -105,6 +105,9 @@ struct TaskItem {
     created_at: Option<String>,
     #[serde(default)]
     updated_at: Option<String>,
+    /// Set when a task enters the "done" column; cleared if moved back out.
+    #[serde(default)]
+    moved_to_done_at: Option<String>,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone, Default, PartialEq, Eq)]
@@ -146,10 +149,14 @@ impl Default for TaskDocument {
     }
 }
 
+fn notes_document_schema_version() -> u32 {
+    3
+}
+
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 struct NotesDocument {
-    #[serde(default = "default_schema_version")]
+    #[serde(default = "notes_document_schema_version")]
     schema_version: u32,
     #[serde(default)]
     revision: u64,
@@ -157,20 +164,39 @@ struct NotesDocument {
     updated_at: Option<String>,
     #[serde(default)]
     updated_by: Option<String>,
+    /// Legacy field — present in schema v2. Migrated into general_notes on first load.
     #[serde(default)]
     content: String,
+    /// "For next meeting" section (schema v3+).
+    #[serde(default)]
+    meeting_notes: String,
+    /// "General" section (schema v3+).
+    #[serde(default)]
+    general_notes: String,
 }
 
 impl Default for NotesDocument {
     fn default() -> Self {
         Self {
-            schema_version: default_schema_version(),
+            schema_version: notes_document_schema_version(),
             revision: 0,
             updated_at: None,
             updated_by: None,
             content: String::new(),
+            meeting_notes: String::new(),
+            general_notes: String::new(),
         }
     }
+}
+
+/// Migrate a v2 document (single `content` field) to v3 (two sections).
+fn normalize_notes_document(mut doc: NotesDocument) -> NotesDocument {
+    if doc.general_notes.is_empty() && !doc.content.is_empty() {
+        doc.general_notes = std::mem::take(&mut doc.content);
+    }
+    doc.content = String::new();
+    doc.schema_version = notes_document_schema_version();
+    doc
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone, Default, PartialEq, Eq)]
@@ -1048,9 +1074,8 @@ fn read_notes_document(
     app: &AppHandle,
 ) -> Result<NotesDocument, AppError> {
     let path = shared_data_path(NOTES_FILE, settings, app)?;
-    let mut document: NotesDocument = read_or_default(&path)?;
-    document.schema_version = default_schema_version();
-    Ok(document)
+    let document: NotesDocument = read_or_default(&path)?;
+    Ok(normalize_notes_document(document))
 }
 
 fn save_notes_document(
@@ -2136,15 +2161,19 @@ fn save_notes(
         Err(err) => return CommandResponse::err(&err.code, err.message),
     };
 
-    let incoming = NotesDocument {
-        schema_version: default_schema_version(),
+    let incoming = normalize_notes_document(NotesDocument {
+        schema_version: notes_document_schema_version(),
         revision: document.revision,
         updated_at: Some(current_iso_timestamp()),
         updated_by: Some(device_id.clone()),
         content: document.content,
-    };
+        meeting_notes: document.meeting_notes,
+        general_notes: document.general_notes,
+    });
 
-    if latest.revision != incoming.revision && latest.content != incoming.content {
+    let content_changed = incoming.meeting_notes != latest.meeting_notes
+        || incoming.general_notes != latest.general_notes;
+    if latest.revision != incoming.revision && content_changed {
         return CommandResponse::ok(NotesSaveResult {
             document: latest,
             conflict: true,
@@ -2152,11 +2181,13 @@ fn save_notes(
     }
 
     let saved_document = NotesDocument {
-        schema_version: default_schema_version(),
+        schema_version: notes_document_schema_version(),
         revision: next_revision(latest.revision, incoming.revision),
         updated_at: Some(current_iso_timestamp()),
         updated_by: Some(device_id),
-        content: incoming.content,
+        content: String::new(),
+        meeting_notes: incoming.meeting_notes,
+        general_notes: incoming.general_notes,
     };
 
     match save_notes_document(&settings, &app, &saved_document) {
@@ -2333,124 +2364,6 @@ fn save_local_settings_cmd(
 
     let mut status = compute_storage_status(&normalized_settings, &app);
     status.notice = migration_notice;
-    CommandResponse::ok(status)
-}
-
-#[tauri::command]
-fn attempt_legacy_import_cmd(
-    state: State<AppState>,
-    app: AppHandle,
-) -> CommandResponse<StorageStatus> {
-    let settings = state.local_settings.lock().unwrap().clone();
-    let destination = match shared_data_dir(&settings, &app) {
-        Ok(path) => path,
-        Err(err) => return CommandResponse::err(&err.code, err.message),
-    };
-
-    let import_notice =
-        match import_legacy_shared_data_into_destination(&settings, &destination, &app) {
-            Ok(notice) => notice,
-            Err(err) => return CommandResponse::err(&err.code, err.message),
-        };
-
-    let migration_result =
-        migrate_legacy_ticket_secret_if_needed(&settings, &app, &KeyringCredentialStore);
-    *state.ticket_auth_error.lock().unwrap() = match migration_result {
-        Ok(_) => None,
-        Err(err) if err.code == "sync_unavailable" => None,
-        Err(err) => Some(err.message),
-    };
-
-    let mut status = compute_storage_status(&settings, &app);
-    status.notice = import_notice;
-    CommandResponse::ok(status)
-}
-
-#[tauri::command]
-fn attempt_legacy_import_from_path_cmd(
-    path: String,
-    state: State<AppState>,
-    app: AppHandle,
-) -> CommandResponse<StorageStatus> {
-    let selected_path = PathBuf::from(normalize_path_value(&path));
-    let previous_settings = state.local_settings.lock().unwrap().clone();
-
-    let notice = if selected_path.file_name().and_then(|entry| entry.to_str())
-        == Some(LOCAL_SETTINGS_FILE)
-    {
-        let imported = match read_local_settings_from_path(&selected_path) {
-            Ok(settings) => settings,
-            Err(err) => return CommandResponse::err(&err.code, err.message),
-        };
-        let Some(sync_folder) = normalize_sync_folder(imported.sync_folder) else {
-            return CommandResponse::err(
-                "invalid_import_source",
-                format!(
-                    "{} does not contain a saved sync folder setting.",
-                    selected_path.display()
-                ),
-            );
-        };
-
-        let mut next_settings = previous_settings.clone();
-        next_settings.sync_folder = Some(sync_folder);
-        let next_settings = normalize_local_settings(next_settings);
-
-        if let Err(err) = save_local_settings(&next_settings, &app) {
-            return CommandResponse::err(&err.code, err.message);
-        }
-        *state.local_settings.lock().unwrap() = next_settings.clone();
-
-        let migration_notice =
-            match migrate_shared_data_if_needed(&previous_settings, &next_settings, &app) {
-                Ok(notice) => notice,
-                Err(err) => Some(err.message),
-            };
-        let _ = sync_shared_data_watcher(&app);
-
-        let migration_result =
-            migrate_legacy_ticket_secret_if_needed(&next_settings, &app, &KeyringCredentialStore);
-        *state.ticket_auth_error.lock().unwrap() = match migration_result {
-            Ok(_) => None,
-            Err(err) if err.code == "sync_unavailable" => None,
-            Err(err) => Some(err.message),
-        };
-
-        let mut status = compute_storage_status(&next_settings, &app);
-        status.notice = Some(match migration_notice {
-            Some(extra) => format!(
-                "Recovered the sync folder setting from {}. {}",
-                selected_path.display(),
-                extra
-            ),
-            None => format!(
-                "Recovered the sync folder setting from {}.",
-                selected_path.display()
-            ),
-        });
-        return CommandResponse::ok(status);
-    } else {
-        let destination = match shared_data_dir(&previous_settings, &app) {
-            Ok(path) => path,
-            Err(err) => return CommandResponse::err(&err.code, err.message),
-        };
-
-        match import_shared_data_from_source_path(&selected_path, &destination) {
-            Ok(notice) => notice,
-            Err(err) => return CommandResponse::err(&err.code, err.message),
-        }
-    };
-
-    let migration_result =
-        migrate_legacy_ticket_secret_if_needed(&previous_settings, &app, &KeyringCredentialStore);
-    *state.ticket_auth_error.lock().unwrap() = match migration_result {
-        Ok(_) => None,
-        Err(err) if err.code == "sync_unavailable" => None,
-        Err(err) => Some(err.message),
-    };
-
-    let mut status = compute_storage_status(&previous_settings, &app);
-    status.notice = notice;
     CommandResponse::ok(status)
 }
 
@@ -2749,27 +2662,59 @@ async fn pick_sync_folder(app: AppHandle) -> CommandResponse<Option<String>> {
     }
 }
 
+/// Write a timestamped snapshot of tasks + notes to the local app-data directory.
+/// Keeps only the three most-recent archive files.
 #[tauri::command]
-async fn pick_legacy_import_file(app: AppHandle) -> CommandResponse<Option<String>> {
-    use tauri_plugin_dialog::DialogExt;
+fn write_archive_snapshot(
+    tasks: Vec<TaskItem>,
+    meeting_notes: String,
+    general_notes: String,
+    app: AppHandle,
+) -> CommandResponse<()> {
+    let dir = match local_app_data_dir(&app) {
+        Ok(d) => d,
+        Err(err) => return CommandResponse::err(&err.code, err.message),
+    };
 
-    let (tx, rx) = tokio::sync::oneshot::channel();
-    app.dialog()
-        .file()
-        .set_title("Select Legacy Task/Settings File")
-        .add_filter("JSON", &["json"])
-        .pick_file(move |file| {
-            let _ = tx.send(file);
-        });
+    // Build a sortable, filesystem-safe timestamp: "2026-04-15T10-30-00"
+    let ts = current_iso_timestamp()
+        .replace(':', "-")
+        .chars()
+        .take(19) // drop milliseconds and Z
+        .collect::<String>();
+    let filename = format!("archive-{ts}.json");
+    let archive_path = dir.join(&filename);
 
-    match rx.await {
-        Ok(Some(file)) => match file.clone().into_path() {
-            Ok(path) => CommandResponse::ok(Some(path.to_string_lossy().to_string())),
-            Err(_) => CommandResponse::ok(Some(normalize_path_value(&file.to_string()))),
-        },
-        Ok(None) => CommandResponse::ok(None),
-        Err(err) => CommandResponse::err("dialog_error", err.to_string()),
+    let data = json!({
+        "archivedAt": current_iso_timestamp(),
+        "tasks": tasks,
+        "meetingNotes": meeting_notes,
+        "generalNotes": general_notes,
+    });
+
+    if let Err(err) = write_json_file(&archive_path, &data) {
+        return CommandResponse::err(&err.code, err.message);
     }
+
+    // Prune old archives — keep newest 3.
+    if let Ok(read_dir) = fs::read_dir(&dir) {
+        let mut archives: Vec<PathBuf> = read_dir
+            .filter_map(|e| e.ok())
+            .map(|e| e.path())
+            .filter(|p| {
+                p.file_name()
+                    .and_then(|n| n.to_str())
+                    .map(|n| n.starts_with("archive-") && n.ends_with(".json"))
+                    .unwrap_or(false)
+            })
+            .collect();
+        archives.sort();
+        for old in archives.iter().rev().skip(3) {
+            let _ = fs::remove_file(old);
+        }
+    }
+
+    CommandResponse::ok(())
 }
 
 fn main() {
@@ -2897,8 +2842,6 @@ fn main() {
             clear_secure_api_key,
             load_local_settings_cmd,
             save_local_settings_cmd,
-            attempt_legacy_import_cmd,
-            attempt_legacy_import_from_path_cmd,
             get_storage_status,
             get_app_metadata,
             window_minimize,
@@ -2911,7 +2854,7 @@ fn main() {
             quick_add_task,
             close_quick_add,
             pick_sync_folder,
-            pick_legacy_import_file,
+            write_archive_snapshot,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
