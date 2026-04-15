@@ -487,6 +487,73 @@ body.kanban-dragging .task-list {
   background: var(--bg-muted);
 }
 
+/* ── Delete confirmation dialog ──────────────────────────────────────────── */
+
+.confirm-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 10000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.35);
+}
+
+.confirm-dialog {
+  background: var(--bg-secondary);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  box-shadow: var(--shadow);
+  padding: 18px 20px 14px;
+  min-width: 220px;
+  max-width: 320px;
+}
+
+.confirm-message {
+  margin: 0 0 14px;
+  font-size: 13px;
+  color: var(--text-primary);
+  line-height: 1.4;
+  word-break: break-word;
+}
+
+.confirm-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.confirm-cancel,
+.confirm-delete {
+  min-height: 28px;
+  padding: 0 14px;
+  border-radius: 7px;
+  font-size: 12px;
+  cursor: pointer;
+  border: 1px solid var(--border);
+}
+
+.confirm-cancel {
+  background: var(--bg-muted);
+  color: var(--text-secondary);
+}
+
+.confirm-cancel:hover {
+  background: var(--bg-card-hover);
+}
+
+.confirm-delete {
+  background: var(--danger-soft);
+  color: var(--danger);
+  border-color: transparent;
+}
+
+.confirm-delete:hover {
+  filter: brightness(1.08);
+}
+
+/* ─────────────────────────────────────────────────────────────────────────── */
+
 .task-title-input,
 .task-notes-area,
 .new-task-input,

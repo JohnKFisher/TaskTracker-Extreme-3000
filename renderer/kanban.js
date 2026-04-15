@@ -396,14 +396,64 @@ function addTask(board, title, column) {
   renderAllColumns();
 }
 
-function deleteTask(id) {
+// Custom confirm dialog — window.confirm() is unreliable in a frameless WebView.
+function confirmDelete(taskTitle) {
+  return new Promise((resolve) => {
+    const overlay = document.createElement('div');
+    overlay.className = 'confirm-overlay';
+
+    const dialog = document.createElement('div');
+    dialog.className = 'confirm-dialog';
+    dialog.setAttribute('role', 'alertdialog');
+    dialog.setAttribute('aria-modal', 'true');
+
+    const msg = document.createElement('p');
+    msg.className = 'confirm-message';
+    msg.textContent = `Delete "${taskTitle}"?`;
+
+    const actions = document.createElement('div');
+    actions.className = 'confirm-actions';
+
+    const cancelBtn = document.createElement('button');
+    cancelBtn.type = 'button';
+    cancelBtn.textContent = 'Cancel';
+    cancelBtn.className = 'confirm-cancel';
+
+    const deleteBtn = document.createElement('button');
+    deleteBtn.type = 'button';
+    deleteBtn.textContent = 'Delete';
+    deleteBtn.className = 'confirm-delete';
+
+    function close(result) {
+      overlay.remove();
+      resolve(result);
+    }
+
+    cancelBtn.addEventListener('click', () => close(false));
+    deleteBtn.addEventListener('click', () => close(true));
+    overlay.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape') { e.preventDefault(); close(false); }
+    });
+
+    actions.appendChild(cancelBtn);
+    actions.appendChild(deleteBtn);
+    dialog.appendChild(msg);
+    dialog.appendChild(actions);
+    overlay.appendChild(dialog);
+    document.body.appendChild(overlay);
+    cancelBtn.focus();
+  });
+}
+
+async function deleteTask(id) {
   if (!isTaskStorageWritable()) return;
 
   const task = tasks.find((entry) => entry.id === id);
   if (!task) return;
 
-  if (task.column !== 'done' && !confirm(`Delete "${task.title}"?`)) {
-    return;
+  if (task.column !== 'done') {
+    const confirmed = await confirmDelete(task.title);
+    if (!confirmed) return;
   }
 
   const updatedAt = new Date().toISOString();
