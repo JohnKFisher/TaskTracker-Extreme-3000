@@ -852,11 +852,8 @@ body.kanban-dragging .task-list {
 }
 
 #tab-notes {
-  display: flex;
-  flex-direction: column;
   gap: 0;
   padding: 10px;
-  overflow-y: auto;
 }
 
 .notes-section-label {
