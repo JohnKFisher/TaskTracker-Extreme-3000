@@ -244,6 +244,7 @@ function renderAllColumns() {
     COLUMNS.forEach((column) => renderColumn(board, column));
     window.updateTabCount(board === 'work' ? 'tasks' : 'personal', tasks.filter((task) => task.board === board).length);
   });
+  document.querySelectorAll('.kanban-board').forEach(window.syncCompact);
 }
 
 function renderColumn(board, column) {

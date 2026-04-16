@@ -98,6 +98,7 @@ function renderTickets() {
 
   if (!filtered.length) {
     ticketsList.innerHTML = '<div class="empty-state">No tickets to show</div>';
+    window.syncCompact(ticketsList);
     return;
   }
 
@@ -163,6 +164,7 @@ function renderTickets() {
     card.appendChild(hideBtn);
     ticketsList.appendChild(card);
   });
+  window.syncCompact(ticketsList);
 }
 
 async function toggleHideTicket(ticketNumber) {

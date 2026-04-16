@@ -716,7 +716,8 @@ body.kanban-dragging .task-list {
 }
 
 .ticket-card.hidden-ticket {
-  opacity: 0.74;
+  opacity: 0.38;
+  filter: grayscale(0.65);
 }
 
 .ticket-info {
@@ -899,6 +900,50 @@ body.kanban-dragging .task-list {
   min-height: 20px;
   margin-top: 8px;
   color: var(--danger);
+}
+
+/* Auto-compact: tickets panel */
+#tickets-list.compact .ticket-card {
+  padding: 6px;
+  margin-bottom: 4px;
+}
+
+#tickets-list.compact .ticket-hide-btn {
+  width: 26px;
+  height: 26px;
+}
+
+#tickets-list.compact .ticket-subject {
+  margin-bottom: 3px;
+}
+
+#tickets-list.compact .ticket-number {
+  margin-bottom: 2px;
+}
+
+#tickets-list.compact .ticket-meta {
+  gap: 4px;
+}
+
+/* Auto-compact: kanban boards */
+.kanban-board.compact .section-header {
+  min-height: 28px;
+  padding: 4px 8px;
+}
+
+.kanban-board.compact .task-list {
+  padding: 4px 6px;
+  min-height: 38px;
+}
+
+.kanban-board.compact .task-card {
+  padding: 4px 6px;
+  margin: 2px 0;
+}
+
+.kanban-board.compact .task-delete {
+  width: 20px;
+  height: 20px;
 }
 
 @media (max-width: 480px) {

@@ -109,11 +109,22 @@ function setActiveTab(tabName, section) {
     panel.classList.toggle('active', panel.id === `tab-${tabName}`);
   });
 
+  const activePanel = document.getElementById(`tab-${tabName}`);
+  if (activePanel && window.syncCompact) {
+    activePanel.querySelectorAll('.kanban-board, #tickets-list').forEach(window.syncCompact);
+  }
+
   if (section) {
     const target = document.getElementById(`${section}-section`);
     if (target) target.scrollIntoView({ block: 'start', behavior: 'smooth' });
   }
 }
+
+window.syncCompact = function syncCompact(el) {
+  if (!el) return;
+  el.classList.remove('compact');
+  if (el.scrollHeight > el.clientHeight) el.classList.add('compact');
+};
 
 window.setActiveTab = setActiveTab;
 window.getActiveTabName = function getActiveTabName() {
