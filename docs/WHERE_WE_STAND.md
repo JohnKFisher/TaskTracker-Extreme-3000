@@ -5,8 +5,8 @@ TaskTracker Extreme 3000
 
 ## Current Version / Build
 - Version source of truth: `version.json`
-- Current marketing version: `2.3.0`
-- Current build number: `13`
+- Current marketing version: `2.3.2`
+- Current build number: `15`
 
 ## Overall Status
 Working personal-use Tauri desktop app with a revisioned local/shared JSON data model, secure Desk365 credential storage, explicit shared-storage status reporting, and a checked-in deterministic version/build workflow. Shared task data now watches for cross-machine changes, reconciles periodically, merges common task/hidden-ticket collisions conservatively, can import legacy data into a newly chosen sync folder, and on first rebuilt launch can pull older local Windows/Electron task files into the current app-data location. The current follow-up passes also add manual legacy import controls in Settings, recover missing sync-folder settings from older `local-settings.json` files, normalize dialog-picked storage paths more defensively on Windows, keep hidden-ticket save failures from forcing a full Desk365 reload, verify secure API-key writes immediately after saving them, import only the explicitly chosen legacy JSON file, queue ticket initialization fetches in a way that avoids both silent skips and Desk365 short-window rate limits, and add an optional Personal task board ahead of Work Tasks when enabled. The repo is now at version `2.3.0` / build `13`.
@@ -34,6 +34,9 @@ Working personal-use Tauri desktop app with a revisioned local/shared JSON data 
 - Desk365 API-key saves now verify that the key is still present in secure storage immediately after writing it
 - Desk365 fetches are now deduplicated and rate-limited in the renderer so startup/status events do not trip the API's short-window request limit
 - Visible warning state when a configured sync folder is unavailable
+- Settings now includes a Light / Dark / Auto theme toggle; defaults to Auto (follows system), saved per machine
+- Hidden tickets are now visibly distinct when "Show hidden" is active — significantly lower opacity plus grayscale desaturation rather than a subtle dim
+- Ticket list and kanban boards automatically switch to a denser layout when content overflows the panel; returns to normal spacing when content fits again
 - Settings tab with storage status plus an About section showing version/build and the public GitHub repo
 - Checked-in version/build workflow through `version.json` and helper scripts
 - GitHub Actions push-build workflow that produces a portable Windows EXE and a universal macOS DMG
@@ -56,6 +59,7 @@ Working personal-use Tauri desktop app with a revisioned local/shared JSON data 
 - If a configured sync folder goes offline, shared-data features stop until that folder is reachable again by design
 - Cloud-sync delays can still postpone when another machine’s file changes arrive locally, even though the app watches for them and rechecks every 5 minutes
 - The project is tested primarily on the owner’s own machines
+- When a non-Auto theme is saved, there is a brief flash of the system theme on launch before JS applies the override; this is a known cosmetic limitation of applying the setting in the renderer rather than at native level
 
 ## Setup / Runtime Requirements
 - Node.js and npm
