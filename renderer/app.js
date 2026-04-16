@@ -120,6 +120,14 @@ function setActiveTab(tabName, section) {
   }
 }
 
+window.applyColorTheme = function applyColorTheme(theme) {
+  if (theme === 'light' || theme === 'dark') {
+    document.documentElement.dataset.theme = theme;
+  } else {
+    delete document.documentElement.dataset.theme;
+  }
+};
+
 window.syncCompact = function syncCompact(el) {
   if (!el) return;
   el.classList.remove('compact');

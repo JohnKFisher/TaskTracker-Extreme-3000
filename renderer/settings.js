@@ -20,6 +20,14 @@ function applyLocalSettings(settings) {
   if (typeof window.applyPersonalTabVisibility === 'function') {
     window.applyPersonalTabVisibility(Boolean(settings.showPersonalTab));
   }
+  updateColorThemeToggle(settings.colorTheme || 'auto');
+  window.applyColorTheme(settings.colorTheme || 'auto');
+}
+
+function updateColorThemeToggle(theme) {
+  document.querySelectorAll('input[name="color-theme"]').forEach((radio) => {
+    radio.checked = radio.value === theme;
+  });
 }
 
 async function refreshLocalSettingsDisplay() {
@@ -152,6 +160,18 @@ document.getElementById('btn-clear-sync-folder').addEventListener('click', async
     console.error('Failed to clear sync folder:', error);
     renderSyncFolderNotice(error.message || 'Could not clear the sync folder.', 'danger');
   }
+});
+
+document.querySelectorAll('input[name="color-theme"]').forEach((radio) => {
+  radio.addEventListener('change', async (event) => {
+    if (!event.target.checked) return;
+    try {
+      await saveLocalSettingsPatch({ colorTheme: event.target.value });
+    } catch (error) {
+      console.error('Failed to save color theme:', error);
+      updateColorThemeToggle(currentLocalSettings?.colorTheme || 'auto');
+    }
+  });
 });
 
 document.getElementById('toggle-personal-tab').addEventListener('change', async (event) => {
