@@ -263,7 +263,7 @@ function renderColumn(board, column) {
   columnTasks.forEach((task) => list.appendChild(createTaskCard(task)));
   updateEmptyColumnTracking(board, column, columnTasks.length);
 
-  if (columnTasks.length > prevCount && section && section.classList.contains('collapsed')) {
+  if (columnTasks.length > prevCount && column !== 'done' && section && section.classList.contains('collapsed')) {
     section.classList.remove('collapsed');
     const header = section.querySelector('.section-header');
     if (header) header.setAttribute('aria-expanded', 'true');
