@@ -2732,9 +2732,11 @@ fn write_archive_snapshot(
     tasks: Vec<TaskItem>,
     meeting_notes: String,
     general_notes: String,
+    state: State<AppState>,
     app: AppHandle,
 ) -> CommandResponse<()> {
-    let dir = match local_app_data_dir(&app) {
+    let settings = state.local_settings.lock().unwrap().clone();
+    let dir = match shared_data_dir(&settings, &app) {
         Ok(d) => d,
         Err(err) => return CommandResponse::err(&err.code, err.message),
     };
