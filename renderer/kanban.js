@@ -242,7 +242,7 @@ const saveTasks = window.debounce(persistTasks, 350);
 function renderAllColumns() {
   BOARDS.forEach((board) => {
     COLUMNS.forEach((column) => renderColumn(board, column));
-    window.updateTabCount(board === 'work' ? 'tasks' : 'personal', tasks.filter((task) => task.board === board).length);
+    window.updateTabCount(board === 'work' ? 'tasks' : 'personal', tasks.filter((task) => task.board === board && task.column !== 'done').length);
   });
   document.querySelectorAll('.kanban-board').forEach(window.syncCompact);
 }
