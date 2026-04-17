@@ -248,10 +248,12 @@ function renderAllColumns() {
 }
 
 function renderColumn(board, column) {
+  const section = document.querySelector(`.kanban-section[data-board="${board}"][data-column="${column}"]`);
   const list = document.querySelector(`.task-list[data-board="${board}"][data-column="${column}"]`);
-  const countEl = document.querySelector(`.kanban-section[data-board="${board}"][data-column="${column}"] .task-count`);
+  const countEl = section && section.querySelector('.task-count');
   if (!list || !countEl) return;
 
+  const prevCount = list.children.length;
   const columnTasks = tasks
     .filter((task) => task.board === board && task.column === column)
     .sort((a, b) => a.order - b.order);
@@ -260,6 +262,12 @@ function renderColumn(board, column) {
   list.innerHTML = '';
   columnTasks.forEach((task) => list.appendChild(createTaskCard(task)));
   updateEmptyColumnTracking(board, column, columnTasks.length);
+
+  if (columnTasks.length > prevCount && section && section.classList.contains('collapsed')) {
+    section.classList.remove('collapsed');
+    const header = section.querySelector('.section-header');
+    if (header) header.setAttribute('aria-expanded', 'true');
+  }
 }
 
 function createTaskCard(task) {
