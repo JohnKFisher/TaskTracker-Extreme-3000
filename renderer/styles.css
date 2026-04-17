@@ -215,8 +215,14 @@ textarea:disabled {
   color: var(--danger);
 }
 
+#btn-pin {
+  color: var(--text-muted);
+  opacity: 0.45;
+}
+
 #btn-pin.pinned {
-  color: var(--accent);
+  color: var(--danger);
+  opacity: 1;
 }
 
 #tab-bar {
