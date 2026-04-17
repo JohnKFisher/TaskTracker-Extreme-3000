@@ -207,20 +207,8 @@
   <div id="tab-settings" class="tab-content" role="tabpanel">
     <div id="settings-panel">
       <div class="settings-section">
-        <div class="settings-section-title">Storage</div>
-        <p class="settings-hint">
-          Shared data includes tasks, notes, Desk365 settings, and hidden ticket state. Local settings and window position remain machine-specific.
-        </p>
-        <div id="storage-status-card" class="info-card">
-          <div id="storage-mode-label" class="info-card-label">Storage mode</div>
-          <div id="storage-mode-value" class="info-card-value">Loading…</div>
-          <div id="storage-message" class="info-card-message hidden"></div>
-        </div>
-      </div>
-
-      <div class="settings-section">
         <div class="settings-section-title">Appearance</div>
-        <p class="settings-hint">Color theme. Auto follows your system setting. Saved per machine.</p>
+        <p class="settings-hint">Color theme — Auto follows your system setting. Saved per machine.</p>
         <div class="theme-selector" role="group" aria-label="Color theme">
           <label class="theme-option">
             <input type="radio" name="color-theme" value="auto">
@@ -238,10 +226,8 @@
       </div>
 
       <div class="settings-section">
-        <div class="settings-section-title">Tabs</div>
-        <p class="settings-hint">
-          Personal is a second task board with the same layout as Work Tasks. Its visibility is saved per machine.
-        </p>
+        <div class="settings-section-title">Layout</div>
+        <p class="settings-hint">Saved per machine.</p>
         <label id="show-personal-label" class="settings-toggle">
           <input type="checkbox" id="toggle-personal-tab">
           Show Personal tab
@@ -255,8 +241,13 @@
       <div class="settings-section">
         <div class="settings-section-title">Sync Folder</div>
         <p class="settings-hint">
-          Point to a cloud-synced folder to share tasks, notes, and Desk365 settings between your Windows and Mac machines. If that folder goes offline, the app will pause shared-data access instead of silently writing somewhere else.
+          Point to a cloud-synced folder to share tasks, notes, and Desk365 settings between machines. If it goes offline, shared-data access pauses automatically.
         </p>
+        <div id="storage-status-card" class="info-card">
+          <div id="storage-mode-label" class="info-card-label">Storage mode</div>
+          <div id="storage-mode-value" class="info-card-value">Loading…</div>
+          <div id="storage-message" class="info-card-message hidden"></div>
+        </div>
         <span id="sync-folder-display" class="settings-value">None — using local app data folder</span>
         <div class="settings-buttons">
           <button id="btn-browse-sync-folder" type="button" class="settings-btn">Browse…</button>
