@@ -19,7 +19,7 @@ input.addEventListener('keydown', async (event) => {
 
   if (event.key !== 'Enter') return;
 
-  const title = input.value.trim();
+  const title = input.value.trim().replace(/^./, (c) => c.toUpperCase());
   if (!title) {
     await callCommand('close_quick_add');
     return;

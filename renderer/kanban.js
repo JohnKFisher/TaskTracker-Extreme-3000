@@ -500,7 +500,7 @@ function handleAddTask(board) {
   const columnSelect = document.querySelector(`.new-task-column[data-board="${board}"]`);
   if (!input || !columnSelect) return;
 
-  const title = input.value.trim();
+  const title = input.value.trim().replace(/^./, (c) => c.toUpperCase());
   if (!title) return;
 
   addTask(board, title, columnSelect.value);
