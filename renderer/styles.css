@@ -685,7 +685,7 @@ body.kanban-dragging .task-list {
 
 #tickets-actions {
   display: grid;
-  grid-template-columns: auto 1fr auto;
+  grid-template-columns: auto 1fr auto auto;
   align-items: center;
   gap: 10px;
   padding: 8px 10px 10px;

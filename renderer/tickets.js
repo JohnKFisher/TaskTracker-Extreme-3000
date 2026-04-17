@@ -27,6 +27,7 @@ const refreshBtn = document.getElementById('btn-refresh-tickets');
 const showHiddenCheckbox = document.getElementById('show-hidden-tickets');
 const changeApiKeyBtn = document.getElementById('btn-change-api-key');
 const saveApiKeyBtn = document.getElementById('btn-save-api-key');
+const newTicketBtn = document.getElementById('btn-new-ticket');
 
 function stopPolling() {
   if (pollTimer) clearInterval(pollTimer);
@@ -66,7 +67,13 @@ function setTicketControlsEnabled(enabled) {
 
 function setDesk365Base(domain) {
   desk365Base = domain ? `https://${domain}/app/tickets/ticketdetails?tktNum=` : '';
+  newTicketBtn.classList.toggle('hidden', !domain);
 }
+
+newTicketBtn.addEventListener('click', () => {
+  if (!ticketState?.desk365Domain) return;
+  window.openExternal(`https://${ticketState.desk365Domain}/app/tickets/createticket`).catch(() => {});
+});
 
 function applyHiddenTicketDocument(document) {
   hiddenTicketDocument = {
