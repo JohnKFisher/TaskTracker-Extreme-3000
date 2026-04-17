@@ -21,7 +21,7 @@ Rationale: The codebase and README both position the kanban task board, notes, a
 Status: approved
 
 ## 2026-04-11 — Build and distribute through GitHub Actions artifacts
-Rationale: The repo already uses a multi-platform GitHub Actions workflow that builds Windows and macOS artifacts on pushes to `main` and manual dispatch. That matches the project’s documented distribution path and avoids making local Rust toolchains a release prerequisite.
+Rationale: The repo already uses a multi-platform GitHub Actions workflow that builds Windows and macOS artifacts on pushes to `main` and manual dispatch. That matches the project's documented distribution path and avoids making local Rust toolchains a release prerequisite.
 Status: superseded
 
 ## 2026-04-11 — Windows is the primary UX tie-breaker
@@ -86,4 +86,40 @@ Status: approved
 
 ## 2026-04-13 — Split task boards into Work and optional Personal views
 Rationale: The existing kanban remains the work board, but a second Personal board with the same layout is now supported in the same shared task document via a per-task `board` field. Personal-tab visibility is machine-local through local settings so each machine can choose whether to surface it without changing synced shared data.
+Status: approved
+
+## 2026-04-17 — Auto-expand collapsed categories when tasks are added, except Done
+Rationale: Collapsing a category is a deliberate space-saving choice, but adding a task to a collapsed category while it stays hidden creates confusion about whether the add worked. Auto-expanding on task gain makes the result immediately visible. Done is explicitly excluded because the user may want it permanently collapsed and tasks landing there (via move, sync, or auto-archive) should not override that.
+Status: approved
+
+## 2026-04-17 — Tab counts exclude Done tasks
+Rationale: Done tasks are complete work awaiting auto-deletion; showing them in the tab count inflates the apparent workload and makes the count less useful as a quick gauge of remaining work.
+Status: approved
+
+## 2026-04-17 — Pin button visual state: gray when off, red when always-on-top is active
+Rationale: The icon alone (📌) is ambiguous without a clear active/inactive state. Using a distinct red color for active and a dimmed gray for inactive makes the always-on-top state immediately readable at a glance without any additional UI.
+Status: approved
+
+## 2026-04-17 — Standing column is optional, defaulting to visible
+Rationale: Standing is a useful catch-all for recurring or ambient tasks, but not every workflow needs it. Making it toggleable in Settings > Layout per machine lets the owner try living without it without losing any data — tasks in Standing are preserved and return if the column is re-enabled.
+Status: approved
+
+## 2026-04-17 — Update check: check-and-notify only, no silent auto-install
+Rationale: A full silent auto-updater requires cryptographic signing infrastructure and would force a change from portable EXE to a bundled Windows installer. For a personal app used on a handful of machines, a lightweight startup check against the GitHub releases API that shows a clickable banner when a new version exists gives the benefit of awareness with almost none of the complexity.
+Status: approved
+
+## 2026-04-17 — Auto-capitalize the first character of new task titles
+Rationale: Task titles typed in lowercase first letter are common and look inconsistent in the board. Capitalizing at entry is low-friction and easy to override; it avoids making every card look like a note fragment.
+Status: approved
+
+## 2026-04-17 — Settings page: merge Storage + Sync Folder, rename Tabs → Layout, reorder
+Rationale: Storage status and sync folder configuration are the same topic and were unnecessarily split. The Tabs section was renamed Layout because it now controls column visibility too, not just tab visibility. Appearance moved to the top as the most frequently touched section.
+Status: approved
+
+## 2026-04-17 — New ticket button in the tickets bar opens the Desk365 create-ticket page
+Rationale: The tickets panel is read-only by design (it shows existing tickets), but opening a new ticket is a natural companion action. A small + button in the existing bottom bar opens the Desk365 create-ticket URL derived from the configured domain, adding no new vertical space and staying hidden until a domain is configured.
+Status: approved
+
+## 2026-04-17 — Remove legacy hardcoded personal OneDrive path from migration helper
+Rationale: The legacy import path contained a personal organization name. Since the migration is one-time and flagged complete on any machine that has already run the app, the path can be removed without data loss risk. The function now returns None.
 Status: approved

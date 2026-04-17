@@ -4,83 +4,99 @@ A personal sidebar task manager for Windows and macOS with Desk365 helpdesk inte
 
 GitHub: [JohnKFisher/TaskTracker-Extreme-3000](https://github.com/JohnKFisher/TaskTracker-Extreme-3000)
 
+---
+
+![TaskTracker Extreme 3000](docs/screenshots/main.png)
+
+---
+
 ## What This Is
 
-A largely vibe-coded personal hobby app that lives on the edge of the screen and keeps tasks, notes, and support work visible without turning into a full desktop suite. It is built with [Tauri v2](https://tauri.app) for a lightweight native shell and a plain HTML/CSS/JS renderer.
+A largely vibe-coded personal hobby app that lives on the edge of the screen and keeps tasks, notes, and support work visible without turning into a full desktop suite. Built with [Tauri v2](https://tauri.app) for a lightweight native shell and a plain HTML/CSS/JS renderer.
 
-Windows is the primary UX tie-breaker for the project. macOS remains a supported target, but when platform conventions differ, Windows behavior wins unless explicitly documented otherwise.
+Windows is the primary UX tie-breaker. macOS is a supported target, but when platform conventions differ, Windows behavior wins unless explicitly documented otherwise.
 
 ## What It Does
 
-- Kanban-style task board with columns: Standing, Priority, In Progress, To-Do, Rainy Day, Done
+**Task boards**
+- Kanban-style Work Tasks board with columns: Standing (optional), Priority, In Progress, To-Do, Rainy Day, Done
+- Optional Personal board with the same layout, shown per machine from Settings
 - Drag-and-drop reordering within and between columns
+- Right-click context menu to move tasks between columns
+- Collapsed categories auto-expand when a task is added; Done stays collapsed if you want it that way
+- Tab counts show only active (non-Done) tasks
+- Task titles are auto-capitalized on entry
+
+**Quick capture**
 - Global shortcut (`Ctrl/Cmd+Shift+T`) to show or hide the sidebar
 - Quick-add overlay (`Ctrl/Cmd+Shift+N`) to capture a task without switching windows
+
+**Tickets**
 - Desk365 ticket integration with secure API-key storage and periodic refresh
-- Persistent notes tab for scratch text
-- Windows tray behavior, while macOS window close saves and quits the app
-- Settings tab with sync-folder controls, storage status, and About info
+- New ticket "+" button opens the Desk365 create-ticket page directly
+- Hide individual tickets from the list; hidden tickets are visually distinct when revealed
+
+**Notes**
+- Persistent scratch notes tab, shared across machines via sync folder
+
+**Always-on-top**
+- Pin button: dimmed when off, red when active — always visible at a glance
+
+**Auto-update check**
+- On startup, checks the GitHub releases API for a newer version
+- If one exists, shows a clickable banner linking to the releases page; silent on network failure
+
+**Settings**
+- Appearance: Light / Dark / Auto theme, saved per machine
+- Layout: toggle Personal tab and Standing column visibility, saved per machine
+- Sync Folder: point to a cloud-synced folder to share tasks, notes, and Desk365 config between machines
 
 ## Data, Privacy, And Storage
 
-All user data stays local unless you explicitly connect your own Desk365 account. There is no telemetry, analytics, or hidden network activity.
+All user data stays local unless you explicitly configure a sync folder pointing at your own cloud storage. There is no telemetry, analytics, or hidden network activity. The only outbound network calls are to your configured Desk365 account and the GitHub releases API for the version check.
 
 When packaged, local data is stored in the OS app-data folder:
 - **Windows:** `%AppData%\com.tasktracker.extreme3000\`
 - **macOS:** `~/Library/Application Support/com.tasktracker.extreme3000/`
 
-Shared-data files are plain JSON:
+Shared-data files (synced if a sync folder is configured):
 - `tasks.json`
 - `notes.json`
-- `config.json` (Desk365 hostname only, no secret)
+- `config.json` (Desk365 hostname only — no secrets)
 - `hidden-tickets.json`
 
-These shared files now carry revision metadata so multiple running machines can reconcile changes more safely.
-
-Machine-specific data stays local and is never synced:
+Machine-specific files (never synced):
 - `local-settings.json`
 - `window-state.json`
 
-Desk365 API keys are **not** stored in `config.json`. They are stored in the operating system’s secure credential store.
-Desk365 ticket payloads are also **not** stored in the shared folder. Each machine fetches its own live tickets directly from Desk365 on the normal refresh cadence.
+Desk365 API keys are stored in the OS secure credential store, not in any JSON file. Desk365 ticket payloads are not stored in the shared folder — each machine fetches its own live tickets directly.
 
-If you configure a sync folder, shared data is written there instead of the local app-data folder. If that folder later becomes unavailable, the app will pause shared-data access and show a warning instead of silently falling back to a different location. Shared-folder updates are watched for near-immediate refresh, with a 5-minute reconciliation pass as a fallback when cloud sync lags or a file event is missed.
-
-When you pick a new sync folder, the app can import existing shared JSON from the current app-data location or known legacy pre-Tauri locations so you do not have to rebuild your setup by hand.
+If a configured sync folder becomes unavailable, the app pauses shared-data access and shows a warning rather than silently writing somewhere else. Shared-folder changes are watched for near-immediate refresh, with a 5-minute reconciliation sweep as a fallback.
 
 ## First-Run Desk365 Setup
 
 The Tickets tab will ask for:
-- your Desk365 hostname, stored in `config.json`
-- your Desk365 API key, stored securely in the OS credential store
-
-Enter the hostname only, for example `yourcompany.desk365.io`. Do not include `https://` or a path.
+- your Desk365 hostname — stored in `config.json` (e.g. `yourcompany.desk365.io`, no `https://` or path)
+- your Desk365 API key — stored securely in the OS credential store
 
 ## Versioning
 
-Version/build metadata now comes from the checked-in `version.json` file.
-
-- `marketingVersion` is the app version
-- `buildNumber` is the monotonically increasing build number
-
-Useful commands:
+Version and build metadata comes from the checked-in `version.json` file.
 
 ```bash
-npm run version:check   # verify tracked version fields match version.json
-npm run version:sync    # sync tracked version fields from version.json
+npm run version:check   # verify tracked files match version.json
+npm run version:sync    # sync tracked files from version.json
 npm run version:bump    # bump patch version + build number
 ```
 
-Release builds are expected to run from already-synced, committed version metadata. The build itself should not rewrite tracked source files.
+For a minor or major bump, edit `version.json` directly then run `npm run version:sync`.
 
 ## Getting Builds
 
-GitHub Actions now builds the app automatically in two ways:
+GitHub Actions builds automatically in two ways:
 
 - Every push to `main` creates downloadable workflow artifacts under **GitHub → Actions → (latest run) → Artifacts**
-- Every push to `main` that changes `version.json` creates or updates a GitHub Release for that checked-in app version
-
-Push-build artifacts:
+- Every push to `main` that changes `version.json` creates or updates a GitHub Release for that version
 
 | Artifact | Platform |
 |---|---|
@@ -88,15 +104,12 @@ Push-build artifacts:
 | `tasktracker-extreme-3000-macos-universal-dmg` | macOS universal DMG |
 
 Release flow:
-
 ```bash
-npm run version:bump
+npm run version:bump   # or edit version.json manually for minor/major
 git push origin main
 ```
 
-That push should publish a GitHub Release tagged to match the checked-in `marketingVersion` in `version.json`.
-
-> **First-run warning:** macOS CI builds are ad-hoc signed, which improves compatibility but does **not** replace Apple notarization. You may still need `System Settings -> Privacy & Security -> Open Anyway`. Windows builds are unsigned, so SmartScreen may still require `More info -> Run anyway`.
+> **Platform note:** macOS CI builds are ad-hoc signed but not notarized — you may need `System Settings → Privacy & Security → Open Anyway`. Windows builds are unsigned and may need `More info → Run anyway` on first launch.
 
 ## Building From Source
 
@@ -109,7 +122,6 @@ npm run dev
 ```
 
 For a production build:
-
 ```bash
 npm run version:check
 npm run build
@@ -117,7 +129,7 @@ npm run build
 
 ## Limitations
 
-- Requires a Desk365 account for ticket integration; the task board and notes still work without it
+- Requires a Desk365 account for ticket integration; task board and notes work without it
 - Shared-data features depend on the configured sync folder remaining reachable
-- Notes are still one shared text blob, so simultaneous edits on two machines can require a manual retry after a conflict warning
-- Tested primarily on my own machines; your mileage may vary
+- Notes are one shared text blob — simultaneous edits on two machines require a manual retry after a conflict warning
+- Tested primarily on the owner's own machines
