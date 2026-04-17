@@ -1292,13 +1292,9 @@ fn legacy_packaged_data_dirs() -> Vec<PathBuf> {
 }
 
 fn legacy_hardcoded_onedrive_dir() -> Option<PathBuf> {
-    let root = std::env::var_os("USERPROFILE").or_else(|| std::env::var_os("HOME"))?;
-    Some(
-        PathBuf::from(root)
-            .join("OneDrive - VNANNJ")
-            .join("John's TaskTracker")
-            .join("data"),
-    )
+    // Legacy path removed; migration already flagged complete on any machine that ran it.
+    None
+}
 }
 
 fn unique_candidate_dirs(candidates: Vec<PathBuf>, destination: &Path) -> Vec<PathBuf> {
