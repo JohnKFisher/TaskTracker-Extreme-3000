@@ -2394,6 +2394,64 @@ fn get_app_metadata() -> CommandResponse<AppMetadata> {
     })
 }
 
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct UpdateCheckResult {
+    available: bool,
+    latest_version: String,
+    release_url: String,
+}
+
+fn semver_tuple(v: &str) -> (u32, u32, u32) {
+    let parts: Vec<u32> = v.split('.').filter_map(|p| p.parse().ok()).collect();
+    (
+        parts.get(0).copied().unwrap_or(0),
+        parts.get(1).copied().unwrap_or(0),
+        parts.get(2).copied().unwrap_or(0),
+    )
+}
+
+#[tauri::command]
+async fn check_for_update() -> CommandResponse<UpdateCheckResult> {
+    let client = match reqwest::Client::builder()
+        .user_agent("TaskTracker-Extreme-3000")
+        .timeout(std::time::Duration::from_secs(10))
+        .use_rustls_tls()
+        .build()
+    {
+        Ok(c) => c,
+        Err(e) => return CommandResponse::err("network_error", e.to_string()),
+    };
+
+    let response = match client
+        .get("https://api.github.com/repos/JohnKFisher/TaskTracker-Extreme-3000/releases/latest")
+        .send()
+        .await
+    {
+        Ok(r) => r,
+        Err(e) => return CommandResponse::err("network_error", e.to_string()),
+    };
+
+    let json: serde_json::Value = match response.json().await {
+        Ok(j) => j,
+        Err(e) => return CommandResponse::err("parse_error", e.to_string()),
+    };
+
+    let tag = json["tag_name"].as_str().unwrap_or("").trim_start_matches('v');
+    let release_url = json["html_url"]
+        .as_str()
+        .unwrap_or(GITHUB_URL)
+        .to_string();
+    let current = env!("CARGO_PKG_VERSION");
+    let available = !tag.is_empty() && semver_tuple(tag) > semver_tuple(current);
+
+    CommandResponse::ok(UpdateCheckResult {
+        available,
+        latest_version: tag.to_string(),
+        release_url,
+    })
+}
+
 #[tauri::command]
 fn window_minimize(window: tauri::WebviewWindow) -> CommandResponse<()> {
     match window.minimize() {
@@ -2846,6 +2904,7 @@ fn main() {
             save_local_settings_cmd,
             get_storage_status,
             get_app_metadata,
+            check_for_update,
             window_minimize,
             hide_window,
             quit_app,

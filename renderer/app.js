@@ -71,15 +71,24 @@ function renderTopBanner() {
     banner.textContent = currentAppNotice.message;
     banner.classList.add(currentAppNotice.tone || 'info');
     banner.classList.remove('hidden');
+    if (currentAppNotice.onClick) {
+      banner.style.cursor = 'pointer';
+      banner.onclick = currentAppNotice.onClick;
+    } else {
+      banner.style.cursor = '';
+      banner.onclick = null;
+    }
     return;
   }
 
   banner.textContent = '';
   banner.classList.add('hidden');
+  banner.style.cursor = '';
+  banner.onclick = null;
 }
 
-window.showAppNotice = function showAppNotice(message, tone = 'info', timeoutMs = 7000) {
-  currentAppNotice = { message, tone };
+window.showAppNotice = function showAppNotice(message, tone = 'info', timeoutMs = 7000, onClick = null) {
+  currentAppNotice = { message, tone, onClick };
   if (noticeTimer) clearTimeout(noticeTimer);
   if (timeoutMs > 0) {
     noticeTimer = setTimeout(() => {
@@ -359,6 +368,17 @@ listen('app-close-requested', async () => {
 Promise.all([window.refreshStorageStatus(), window.refreshAppMetadata()]).catch((error) => {
   console.error('Failed to initialize app state:', error);
 });
+
+callCommand('check_for_update').then((result) => {
+  if (result && result.available) {
+    window.showAppNotice(
+      `v${result.latestVersion} is available — click to download`,
+      'info',
+      0,
+      () => window.openExternal(result.releaseUrl),
+    );
+  }
+}).catch(() => {});
 
 startSharedDataReconcile();
 
