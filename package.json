@@ -1,6 +1,6 @@
 {
   "name": "tasktracker-extreme-3000",
-  "version": "2.4.0",
+  "version": "2.5.0",
   "description": "Personal sidebar task tracker with Desk365 integration",
   "scripts": {
     "dev": "node scripts/version-sync.js --check && tauri dev",

@@ -19,10 +19,10 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - job_name: windows-portable
+          - job_name: windows
             platform: windows-latest
             rust_targets: x86_64-pc-windows-msvc
-            tauri_args: --target x86_64-pc-windows-msvc --no-bundle
+            tauri_args: --target x86_64-pc-windows-msvc --bundles nsis
             upload_plain_binary: true
 
           - job_name: macos-universal
@@ -78,6 +78,7 @@ jobs:
             echo "$notes"
             echo
             echo "Assets:"
+            echo "- Windows NSIS installer (setup EXE)"
             echo "- Windows portable EXE"
             echo "- macOS universal DMG"
             echo "EOF"

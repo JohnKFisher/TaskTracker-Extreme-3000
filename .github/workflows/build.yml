@@ -17,19 +17,15 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - job_name: windows-portable
+          - job_name: windows
             platform: windows-latest
             rust_targets: x86_64-pc-windows-msvc
-            tauri_args: --target x86_64-pc-windows-msvc --no-bundle
-            artifact_name: tasktracker-extreme-3000-windows-portable-exe
-            artifact_path: src-tauri/target/x86_64-pc-windows-msvc/release/tasktracker-extreme-3000.exe
+            tauri_args: --target x86_64-pc-windows-msvc --bundles nsis
 
           - job_name: macos-universal
             platform: macos-14
             rust_targets: aarch64-apple-darwin,x86_64-apple-darwin
             tauri_args: --target universal-apple-darwin --bundles dmg
-            artifact_name: tasktracker-extreme-3000-macos-universal-dmg
-            artifact_path: src-tauri/target/universal-apple-darwin/release/bundle/dmg/*.dmg
 
     name: ${{ matrix.job_name }}
     runs-on: ${{ matrix.platform }}
@@ -64,10 +60,29 @@ jobs:
         with:
           args: ${{ matrix.tauri_args }}
 
-      - name: Upload build artifacts
+      - name: Upload Windows NSIS installer
+        if: matrix.platform == 'windows-latest'
         uses: actions/upload-artifact@v6
         with:
-          name: ${{ matrix.artifact_name }}
-          path: ${{ matrix.artifact_path }}
+          name: tasktracker-extreme-3000-windows-nsis-installer
+          path: src-tauri/target/x86_64-pc-windows-msvc/release/bundle/nsis/*.exe
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Upload Windows portable EXE
+        if: matrix.platform == 'windows-latest'
+        uses: actions/upload-artifact@v6
+        with:
+          name: tasktracker-extreme-3000-windows-portable-exe
+          path: src-tauri/target/x86_64-pc-windows-msvc/release/tasktracker-extreme-3000.exe
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Upload macOS DMG
+        if: matrix.platform == 'macos-14'
+        uses: actions/upload-artifact@v6
+        with:
+          name: tasktracker-extreme-3000-macos-universal-dmg
+          path: src-tauri/target/universal-apple-darwin/release/bundle/dmg/*.dmg
           if-no-files-found: error
           retention-days: 30
