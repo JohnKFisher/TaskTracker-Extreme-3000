@@ -81,6 +81,8 @@ struct LocalSettings {
     sync_folder: Option<String>,
     #[serde(default)]
     show_personal_tab: bool,
+    #[serde(default = "default_true")]
+    show_standing_column: bool,
     #[serde(default)]
     device_id: Option<String>,
     #[serde(default)]
@@ -338,6 +340,10 @@ struct AppState {
     local_settings: Mutex<LocalSettings>,
     ticket_auth_error: Mutex<Option<String>>,
     shared_data_watcher: Mutex<Option<SharedDataWatcher>>,
+}
+
+fn default_true() -> bool {
+    true
 }
 
 fn default_schema_version() -> u32 {

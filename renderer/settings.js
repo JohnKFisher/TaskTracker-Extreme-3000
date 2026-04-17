@@ -20,6 +20,11 @@ function applyLocalSettings(settings) {
   if (typeof window.applyPersonalTabVisibility === 'function') {
     window.applyPersonalTabVisibility(Boolean(settings.showPersonalTab));
   }
+  const showStanding = settings.showStandingColumn !== false;
+  updateStandingColumnToggle(showStanding);
+  if (typeof window.applyStandingColumnVisibility === 'function') {
+    window.applyStandingColumnVisibility(showStanding);
+  }
   updateColorThemeToggle(settings.colorTheme || 'auto');
   window.applyColorTheme(settings.colorTheme || 'auto');
 }
@@ -72,6 +77,11 @@ function updateSyncFolderDisplay(folder) {
 
 function updatePersonalTabToggle(visible) {
   const toggle = document.getElementById('toggle-personal-tab');
+  toggle.checked = visible;
+}
+
+function updateStandingColumnToggle(visible) {
+  const toggle = document.getElementById('toggle-standing-column');
   toggle.checked = visible;
 }
 
@@ -172,6 +182,16 @@ document.querySelectorAll('input[name="color-theme"]').forEach((radio) => {
       updateColorThemeToggle(currentLocalSettings?.colorTheme || 'auto');
     }
   });
+});
+
+document.getElementById('toggle-standing-column').addEventListener('change', async (event) => {
+  try {
+    await saveLocalSettingsPatch({ showStandingColumn: event.target.checked });
+  } catch (error) {
+    console.error('Failed to save Standing column visibility:', error);
+    event.target.checked = !event.target.checked;
+    renderSyncFolderNotice(error.message || 'Could not update the Standing column setting.', 'danger');
+  }
 });
 
 document.getElementById('toggle-personal-tab').addEventListener('change', async (event) => {

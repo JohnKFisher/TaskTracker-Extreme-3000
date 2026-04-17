@@ -139,6 +139,18 @@ window.getActiveTabName = function getActiveTabName() {
   return currentActiveTab;
 };
 
+window.applyStandingColumnVisibility = function applyStandingColumnVisibility(visible) {
+  document.querySelectorAll('.kanban-section[data-column="standing"]').forEach((section) => {
+    section.classList.toggle('hidden', !visible);
+  });
+  document.querySelectorAll('option[value="standing"]').forEach((opt) => {
+    opt.hidden = !visible;
+    if (!visible && opt.selected) {
+      opt.closest('select').value = 'todo';
+    }
+  });
+};
+
 window.applyPersonalTabVisibility = function applyPersonalTabVisibility(visible) {
   const personalTab = document.querySelector('.tab[data-tab="personal"]');
   const personalPanel = document.getElementById('tab-personal');

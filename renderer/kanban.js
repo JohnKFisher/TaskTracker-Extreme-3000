@@ -137,7 +137,8 @@ function showContextMenu(event, task) {
   label.textContent = 'Move to…';
   taskContextMenu.appendChild(label);
 
-  COLUMNS.filter((col) => col !== task.column).forEach((col) => {
+  const standingHidden = document.querySelector('.kanban-section[data-column="standing"]')?.classList.contains('hidden') ?? false;
+  COLUMNS.filter((col) => col !== task.column && !(col === 'standing' && standingHidden)).forEach((col) => {
     const btn = document.createElement('button');
     btn.className = 'context-menu-item';
     btn.type = 'button';
