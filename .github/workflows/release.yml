@@ -117,4 +117,4 @@ jobs:
           prerelease: false
           args: ${{ matrix.tauri_args }}
           uploadPlainBinary: ${{ matrix.upload_plain_binary }}
-          releaseAssetNamePattern: "[name]-[version]-[platform]-[arch][ext]"
+          assetNamePattern: "[name]-[version]-[platform]-[arch][ext]"
