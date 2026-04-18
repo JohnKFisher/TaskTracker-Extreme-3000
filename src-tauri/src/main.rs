@@ -2412,7 +2412,6 @@ async fn check_for_update() -> CommandResponse<UpdateCheckResult> {
     let client = match reqwest::Client::builder()
         .user_agent("TaskTracker-Extreme-3000")
         .timeout(std::time::Duration::from_secs(10))
-        .use_rustls_tls()
         .build()
     {
         Ok(c) => c,
@@ -2523,7 +2522,7 @@ async fn fetch_tickets(
         Err(err) => return Ok(CommandResponse::err(&err.code, err.message)),
     };
 
-    let client = match reqwest::Client::builder().use_rustls_tls().build() {
+    let client = match reqwest::Client::builder().build() {
         Ok(client) => client,
         Err(err) => return Ok(CommandResponse::err("network_error", err.to_string())),
     };
