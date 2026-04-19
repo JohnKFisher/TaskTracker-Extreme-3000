@@ -1295,7 +1295,6 @@ fn legacy_hardcoded_onedrive_dir() -> Option<PathBuf> {
     // Legacy path removed; migration already flagged complete on any machine that ran it.
     None
 }
-}
 
 fn unique_candidate_dirs(candidates: Vec<PathBuf>, destination: &Path) -> Vec<PathBuf> {
     let mut seen = BTreeSet::new();
