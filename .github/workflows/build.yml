@@ -55,6 +55,30 @@ jobs:
       - name: Verify checked-in version metadata
         run: node scripts/version-sync.js --check
 
+      - name: Diagnose Rust compilation (macOS)
+        if: matrix.platform == 'macos-14'
+        working-directory: ./src-tauri
+        shell: bash
+        run: |
+          {
+            echo "## cargo check output (aarch64-apple-darwin)"
+            echo '```'
+            cargo check --target aarch64-apple-darwin 2>&1 | tail -60 || true
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Diagnose Rust compilation (Windows)
+        if: matrix.platform == 'windows-latest'
+        working-directory: ./src-tauri
+        shell: bash
+        run: |
+          {
+            echo "## cargo check output (x86_64-pc-windows-msvc)"
+            echo '```'
+            cargo check --target x86_64-pc-windows-msvc 2>&1 | tail -60 || true
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
       - name: Build Tauri app
         uses: tauri-apps/tauri-action@v0
         with:
