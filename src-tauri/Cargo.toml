@@ -9,14 +9,22 @@ serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 
 [dependencies]
-tauri = { version = "2", features = ["tray-icon", "image-png"] }
-tauri-plugin-single-instance = "2"
-tauri-plugin-global-shortcut = "2"
+tauri = { version = "2", features = ["image-png"] }
 tauri-plugin-notification = "2"
 tauri-plugin-dialog = "2"
 tauri-plugin-opener = "2"
 keyring = { version = "3", features = ["apple-native", "windows-native"] }
+
+# Desktop-only dependencies (not available / not needed on iOS)
+[target.'cfg(not(target_os = "ios"))'.dependencies]
+tauri = { version = "2", features = ["tray-icon"] }
+tauri-plugin-single-instance = "2"
+tauri-plugin-global-shortcut = "2"
 notify = "6"
+
+# iOS-only dependencies
+[target.'cfg(target_os = "ios")'.dependencies]
+objc2-foundation = "0.2"
 
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"

@@ -1,0 +1,14 @@
+{
+  "$schema": "../gen/schemas/mobile-schema.json",
+  "identifier": "mobile-default",
+  "description": "iOS capabilities for TaskTracker Extreme 3000",
+  "windows": ["main"],
+  "platforms": ["iOS"],
+  "permissions": [
+    "core:app:default",
+    "core:event:default",
+    "core:webview:default",
+    "core:window:default",
+    "dialog:allow-open"
+  ]
+}

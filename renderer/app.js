@@ -237,20 +237,24 @@ document.querySelectorAll('.tab').forEach((tab) => {
   tab.addEventListener('click', () => setActiveTab(tab.dataset.tab));
 });
 
-document.getElementById('btn-minimize').addEventListener('click', async () => {
-  await callCommand('window_minimize');
-});
+const isIOS = document.documentElement.dataset.tauriPlatform === 'ios';
 
-document.getElementById('title-bar-drag').addEventListener('mousedown', async (event) => {
-  if (event.buttons !== 1) return;
-  if (event.target.closest('button, input, textarea, select, a')) return;
+if (!isIOS) {
+  document.getElementById('btn-minimize').addEventListener('click', async () => {
+    await callCommand('window_minimize');
+  });
 
-  try {
-    await currentWindow.startDragging();
-  } catch (error) {
-    console.error('Failed to start dragging the window:', error);
-  }
-});
+  document.getElementById('title-bar-drag').addEventListener('mousedown', async (event) => {
+    if (event.buttons !== 1) return;
+    if (event.target.closest('button, input, textarea, select, a')) return;
+
+    try {
+      await currentWindow.startDragging();
+    } catch (error) {
+      console.error('Failed to start dragging the window:', error);
+    }
+  });
+}
 
 function confirmQuit() {
   return new Promise((resolve) => {
@@ -300,11 +304,15 @@ closeBtn.addEventListener('click', async () => {
 });
 
 const pinBtn = document.getElementById('btn-pin');
-pinBtn.classList.add('pinned');
-pinBtn.addEventListener('click', async () => {
-  const isOnTop = await callCommand('toggle_always_on_top');
-  pinBtn.classList.toggle('pinned', isOnTop);
-});
+if (isIOS) {
+  pinBtn.style.display = 'none';
+} else {
+  pinBtn.classList.add('pinned');
+  pinBtn.addEventListener('click', async () => {
+    const isOnTop = await callCommand('toggle_always_on_top');
+    pinBtn.classList.toggle('pinned', isOnTop);
+  });
+}
 
 document.querySelectorAll('.section-header').forEach((header) => {
   function toggleSection() {

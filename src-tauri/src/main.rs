@@ -2,8 +2,11 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 mod version_manifest;
+#[cfg(target_os = "ios")]
+mod ios_bookmark;
 
 use keyring::Entry;
+#[cfg(not(target_os = "ios"))]
 use notify::{EventKind, RecommendedWatcher, RecursiveMode, Watcher};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
@@ -327,6 +330,7 @@ struct SharedDataChangeEvent {
     files: Vec<String>,
 }
 
+#[cfg(not(target_os = "ios"))]
 #[derive(Debug)]
 struct SharedDataWatcher {
     #[allow(dead_code)]
@@ -334,6 +338,11 @@ struct SharedDataWatcher {
     #[allow(dead_code)]
     watched_dir: PathBuf,
 }
+
+// On iOS there is no file watcher; the type still exists so AppState compiles unchanged.
+#[cfg(target_os = "ios")]
+#[derive(Debug)]
+struct SharedDataWatcher;
 
 #[derive(Debug)]
 struct AppState {
@@ -1969,6 +1978,7 @@ fn open_quick_add(app: &AppHandle) {
     }
 }
 
+#[cfg(not(target_os = "ios"))]
 fn setup_tray(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Error>> {
     use tauri::image::Image;
     use tauri::menu::{Menu, MenuItem};
@@ -2053,6 +2063,14 @@ fn relevant_shared_files(paths: &[PathBuf]) -> Vec<String> {
     names.into_iter().collect()
 }
 
+#[cfg(target_os = "ios")]
+fn sync_shared_data_watcher(_app: &AppHandle) -> Result<(), AppError> {
+    // File watching is not available on iOS; the existing periodic polling fallback
+    // (SHARED_DATA_RECONCILE_INTERVAL in the frontend) handles sync instead.
+    Ok(())
+}
+
+#[cfg(not(target_os = "ios"))]
 fn sync_shared_data_watcher(app: &AppHandle) -> Result<(), AppError> {
     let state = app.state::<AppState>();
     let settings = state.local_settings.lock().unwrap().clone();
@@ -2467,6 +2485,9 @@ fn quit_app(app: AppHandle) -> CommandResponse<()> {
     if let Some(window) = app.get_webview_window("main") {
         save_window_state(&window);
     }
+    #[cfg(target_os = "ios")]
+    ios_bookmark::stop_accessing();
+    #[cfg(not(target_os = "ios"))]
     app.exit(0);
     CommandResponse::ok(())
 }
@@ -2713,14 +2734,20 @@ async fn pick_sync_folder(app: AppHandle) -> CommandResponse<Option<String>> {
             let _ = tx.send(folder);
         });
 
-    match rx.await {
+    let result = match rx.await {
         Ok(Some(folder)) => match folder.clone().into_path() {
             Ok(path) => CommandResponse::ok(Some(path.to_string_lossy().to_string())),
             Err(_) => CommandResponse::ok(Some(normalize_path_value(&folder.to_string()))),
         },
         Ok(None) => CommandResponse::ok(None),
         Err(err) => CommandResponse::err("dialog_error", err.to_string()),
+    };
+    // On iOS, persist a security-scoped bookmark so the folder stays accessible after restart.
+    #[cfg(target_os = "ios")]
+    if let Some(Some(ref path)) = result.data {
+        let _ = ios_bookmark::save_bookmark(path);
     }
+    result
 }
 
 /// Write a timestamped snapshot of tasks + notes to the local app-data directory.
@@ -2784,6 +2811,8 @@ fn main() {
     let credential_store = KeyringCredentialStore;
 
     tauri::Builder::default()
+        // Single-instance enforcement is desktop-only; iOS enforces this natively.
+        #[cfg(not(target_os = "ios"))]
         .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
             if let Some(window) = app.get_webview_window("main") {
                 let _ = window.show();
@@ -2793,6 +2822,8 @@ fn main() {
         .plugin(tauri_plugin_notification::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())
+        // Global shortcuts require a keyboard; not applicable on iOS.
+        #[cfg(not(target_os = "ios"))]
         .plugin(
             tauri_plugin_global_shortcut::Builder::new()
                 .with_handler(|app, shortcut, event| {
@@ -2848,15 +2879,30 @@ fn main() {
                 shared_data_watcher: Mutex::new(None),
             });
 
+            #[cfg(not(target_os = "ios"))]
             setup_tray(app)?;
 
-            use tauri_plugin_global_shortcut::GlobalShortcutExt;
-            app.handle()
-                .global_shortcut()
-                .register("CommandOrControl+Shift+T")?;
-            app.handle()
-                .global_shortcut()
-                .register("CommandOrControl+Shift+N")?;
+            #[cfg(not(target_os = "ios"))]
+            {
+                use tauri_plugin_global_shortcut::GlobalShortcutExt;
+                app.handle()
+                    .global_shortcut()
+                    .register("CommandOrControl+Shift+T")?;
+                app.handle()
+                    .global_shortcut()
+                    .register("CommandOrControl+Shift+N")?;
+            }
+
+            // On iOS, restore the security-scoped bookmark for the sync folder (if one was saved).
+            #[cfg(target_os = "ios")]
+            if let Some(restored_path) = ios_bookmark::restore_bookmark() {
+                let state = app.handle().state::<AppState>();
+                let mut settings = state.local_settings.lock().unwrap();
+                if settings.sync_folder.as_deref() != Some(&restored_path) {
+                    settings.sync_folder = Some(restored_path);
+                    let _ = save_local_settings(&settings, app.handle());
+                }
+            }
 
             let _ = sync_shared_data_watcher(app.handle());
             restore_window_state(app.handle());
@@ -2872,6 +2918,7 @@ fn main() {
                         {
                             save_window_state(&main_window);
                         }
+                        #[cfg(not(target_os = "ios"))]
                         window.app_handle().exit(0);
                     }
                 }
@@ -2901,14 +2948,19 @@ fn main() {
             get_storage_status,
             get_app_metadata,
             check_for_update,
+            #[cfg(not(target_os = "ios"))]
             window_minimize,
+            #[cfg(not(target_os = "ios"))]
             hide_window,
             quit_app,
+            #[cfg(not(target_os = "ios"))]
             toggle_always_on_top,
             open_external_url,
             fetch_tickets,
             show_notification,
+            #[cfg(not(target_os = "ios"))]
             quick_add_task,
+            #[cfg(not(target_os = "ios"))]
             close_quick_add,
             pick_sync_folder,
             write_archive_snapshot,

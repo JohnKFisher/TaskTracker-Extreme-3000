@@ -39,6 +39,10 @@
       "entitlements": null,
       "signingIdentity": "-"
     },
+    "iOS": {
+      "minimumSystemVersion": "16.0",
+      "entitlements": "entitlements.ios.plist"
+    },
     "windows": {
       "nsis": {
         "installMode": "perMachine",
