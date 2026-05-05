@@ -317,7 +317,7 @@ function createTaskCard(task) {
   card.dataset.id = task.id;
   card.dataset.board = task.board;
   card.tabIndex = 0;
-  if (businessDaysSince(task.updatedAt) >= 7) card.dataset.stale = 'true';
+  if (businessDaysSince(task.createdAt) >= 7) card.dataset.stale = 'true';
 
   const header = document.createElement('div');
   header.className = 'task-card-header';
