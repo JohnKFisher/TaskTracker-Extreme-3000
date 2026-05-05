@@ -224,6 +224,21 @@ async function persistTasks() {
         8000,
       );
     }
+    const expandedCard = document.querySelector('.task-card.expanded');
+    if (expandedCard) {
+      // Sync DOM values back into the newly-created task object so ongoing edits
+      // aren't lost when applyTaskDocument replaced the tasks array above.
+      const expandedTask = tasks.find((t) => t.id === expandedCard.dataset.id);
+      if (expandedTask) {
+        const titleInput = expandedCard.querySelector('.task-title-input');
+        const notesArea = expandedCard.querySelector('.task-notes-area');
+        if (titleInput) expandedTask.title = titleInput.value;
+        if (notesArea) expandedTask.notes = notesArea.value;
+      }
+      // Skip re-render while the card is open; collapseCard will trigger a save+render.
+      return;
+    }
+
     renderAllColumns();
     if (pendingRemoteTaskReload) {
       pendingRemoteTaskReload = false;
