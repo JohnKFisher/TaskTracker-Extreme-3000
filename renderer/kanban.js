@@ -474,6 +474,7 @@ function addTask(board, title, column) {
 }
 
 // Custom confirm dialog — window.confirm() is unreliable in a frameless WebView.
+// Returns 'cancel', 'done', or 'delete'.
 function confirmDelete(taskTitle) {
   return new Promise((resolve) => {
     const overlay = document.createElement('div');
@@ -496,6 +497,11 @@ function confirmDelete(taskTitle) {
     cancelBtn.textContent = 'Cancel';
     cancelBtn.className = 'confirm-cancel';
 
+    const doneBtn = document.createElement('button');
+    doneBtn.type = 'button';
+    doneBtn.textContent = 'Move to Done';
+    doneBtn.className = 'confirm-done';
+
     const deleteBtn = document.createElement('button');
     deleteBtn.type = 'button';
     deleteBtn.textContent = 'Delete';
@@ -506,13 +512,15 @@ function confirmDelete(taskTitle) {
       resolve(result);
     }
 
-    cancelBtn.addEventListener('click', () => close(false));
-    deleteBtn.addEventListener('click', () => close(true));
+    cancelBtn.addEventListener('click', () => close('cancel'));
+    doneBtn.addEventListener('click', () => close('done'));
+    deleteBtn.addEventListener('click', () => close('delete'));
     overlay.addEventListener('keydown', (e) => {
-      if (e.key === 'Escape') { e.preventDefault(); close(false); }
+      if (e.key === 'Escape') { e.preventDefault(); close('cancel'); }
     });
 
     actions.appendChild(cancelBtn);
+    actions.appendChild(doneBtn);
     actions.appendChild(deleteBtn);
     dialog.appendChild(msg);
     dialog.appendChild(actions);
@@ -529,8 +537,16 @@ async function deleteTask(id) {
   if (!task) return;
 
   if (task.column !== 'done') {
-    const confirmed = await confirmDelete(task.title);
-    if (!confirmed) return;
+    const action = await confirmDelete(task.title);
+    if (action === 'cancel') return;
+    if (action === 'done') {
+      applyTaskColumnChange(task, 'done');
+      alphaSortColumn(task.board, 'done');
+      markTasksDirty();
+      saveTasks();
+      renderAllColumns();
+      return;
+    }
   }
 
   const updatedAt = new Date().toISOString();

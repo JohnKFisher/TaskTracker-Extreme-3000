@@ -24,6 +24,7 @@
   --rainyday-color: #5c6a7f;
   --done-color: #0b8f4d;
   --focus-ring: 0 0 0 2px rgba(15, 108, 189, 0.25);
+  --shadow-hover: 0 14px 32px rgba(15, 23, 42, 0.22);
 }
 
 @media (prefers-color-scheme: dark) {
@@ -52,6 +53,7 @@
     --rainyday-color: #a5b1c6;
     --done-color: #65d39b;
     --focus-ring: 0 0 0 2px rgba(118, 183, 255, 0.28);
+    --shadow-hover: 0 14px 32px rgba(0, 0, 0, 0.55);
   }
 }
 
@@ -81,6 +83,7 @@
   --rainyday-color: #a5b1c6;
   --done-color: #65d39b;
   --focus-ring: 0 0 0 2px rgba(118, 183, 255, 0.28);
+  --shadow-hover: 0 14px 32px rgba(0, 0, 0, 0.55);
 }
 
 :root[data-theme="light"] {
@@ -126,7 +129,8 @@ input,
 select,
 textarea,
 .section-header,
-.ticket-info {
+.ticket-info,
+.task-card {
   outline: none;
 }
 
@@ -137,6 +141,10 @@ textarea:focus-visible,
 .section-header:focus-visible,
 .ticket-info:focus-visible {
   box-shadow: var(--focus-ring);
+}
+
+.task-card:focus-visible {
+  box-shadow: var(--focus-ring), var(--shadow);
 }
 
 button {
@@ -440,12 +448,13 @@ body.kanban-dragging .task-list {
   padding: 6px 8px;
   margin: 3px 0;
   box-shadow: var(--shadow);
-  transition: transform 0.14s ease, background 0.14s ease;
+  transition: transform 0.14s ease, background 0.14s ease, box-shadow 0.14s ease;
 }
 
 .task-card:hover {
   background: var(--bg-card-hover);
-  transform: translateY(-1px);
+  transform: translateY(-3px);
+  box-shadow: var(--shadow-hover);
 }
 
 .task-card-header {
@@ -587,6 +596,16 @@ body.kanban-dragging .task-list {
 }
 
 .confirm-delete:hover {
+  filter: brightness(1.08);
+}
+
+.confirm-done {
+  background: rgba(11, 143, 77, 0.12);
+  color: var(--done-color);
+  border-color: transparent;
+}
+
+.confirm-done:hover {
   filter: brightness(1.08);
 }
 
@@ -1040,4 +1059,25 @@ body.kanban-dragging .task-list {
   .settings-buttons {
     flex-direction: column;
   }
+}
+
+/* ── Card expand animation ───────────────────────────────────────────────── */
+
+@keyframes task-field-appear {
+  from {
+    opacity: 0;
+    transform: translateY(-5px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.task-card.expanded .task-title-input {
+  animation: task-field-appear 0.14s ease forwards;
+}
+
+.task-card.expanded .task-notes-area {
+  animation: task-field-appear 0.18s ease forwards;
 }
