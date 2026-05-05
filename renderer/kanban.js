@@ -15,6 +15,7 @@ let tasksDirty = false;
 let pendingRemoteTaskReload = false;
 let taskSaveInFlight = false;
 let dragInProgress = false;
+let pendingFocusTaskId = null;
 let activeDropTarget = null;
 const COLUMNS = ['standing', 'priority', 'inprogress', 'todo', 'rainyday', 'done'];
 const BOARDS = ['personal', 'work'];
@@ -261,6 +262,11 @@ function renderAllColumns() {
     window.updateTabCount(board === 'work' ? 'tasks' : 'personal', tasks.filter((task) => task.board === board && task.column !== 'done').length);
   });
   document.querySelectorAll('.kanban-board').forEach(window.syncCompact);
+  if (pendingFocusTaskId) {
+    const toFocus = document.querySelector(`.task-card[data-id="${pendingFocusTaskId}"]`);
+    if (toFocus) toFocus.focus();
+    pendingFocusTaskId = null;
+  }
 }
 
 function renderColumn(board, column) {
@@ -291,6 +297,7 @@ function createTaskCard(task) {
   card.className = 'task-card';
   card.dataset.id = task.id;
   card.dataset.board = task.board;
+  card.tabIndex = 0;
 
   const header = document.createElement('div');
   header.className = 'task-card-header';
@@ -339,10 +346,11 @@ function createTaskCard(task) {
     }
   });
 
-  card.addEventListener('dblclick', (event) => {
+  function expandCard() {
     if (!isTaskStorageWritable()) return;
-    if (event.target.closest('.task-delete') || event.target.closest('.task-notes-area') || event.target.closest('.task-title-input')) return;
     if (card.classList.contains('expanded')) return;
+    const currentTitle = card.querySelector('.task-title');
+    if (!currentTitle) return;
 
     card.classList.add('expanded');
 
@@ -363,10 +371,14 @@ function createTaskCard(task) {
         task.updatedAt = new Date().toISOString();
         markTasksDirty();
         saveTasks();
+        pendingFocusTaskId = task.id;
+        collapseCard(card, task);
+      } else if (e.key === 'Escape') {
+        pendingFocusTaskId = task.id;
         collapseCard(card, task);
       }
     });
-    title.replaceWith(input);
+    currentTitle.replaceWith(input);
     input.focus();
     input.select();
 
@@ -382,11 +394,51 @@ function createTaskCard(task) {
       markTasksDirty();
       saveTasks();
     });
+    notesArea.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape') {
+        pendingFocusTaskId = task.id;
+        collapseCard(card, task);
+      }
+    });
     card.appendChild(notesArea);
 
     if (tooltip) {
       tooltip.remove();
       tooltip = null;
+    }
+  }
+
+  card.addEventListener('dblclick', (event) => {
+    if (event.target.closest('.task-delete') || event.target.closest('.task-notes-area') || event.target.closest('.task-title-input')) return;
+    expandCard();
+  });
+
+  card.addEventListener('keydown', (e) => {
+    if (e.target.closest('input, textarea, button')) return;
+    switch (e.key) {
+      case 'Enter':
+        e.preventDefault();
+        expandCard();
+        break;
+      case 'Delete':
+      case 'Backspace':
+        e.preventDefault();
+        deleteTask(task.id);
+        break;
+      case 'ArrowDown': {
+        e.preventDefault();
+        const cards = Array.from(card.closest('.task-list')?.querySelectorAll('.task-card') || []);
+        const next = cards[cards.indexOf(card) + 1];
+        if (next) next.focus();
+        break;
+      }
+      case 'ArrowUp': {
+        e.preventDefault();
+        const cards = Array.from(card.closest('.task-list')?.querySelectorAll('.task-card') || []);
+        const prev = cards[cards.indexOf(card) - 1];
+        if (prev) prev.focus();
+        break;
+      }
     }
   });
 
