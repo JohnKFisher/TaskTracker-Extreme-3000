@@ -457,6 +457,14 @@ body.kanban-dragging .task-list {
   box-shadow: var(--shadow-hover);
 }
 
+.task-card[data-stale="true"] {
+  background-color: color-mix(in srgb, var(--bg-card) 93%, #d97706 7%);
+}
+
+.task-card[data-stale="true"]:hover {
+  background-color: color-mix(in srgb, var(--bg-card-hover) 93%, #d97706 7%);
+}
+
 .task-card-header {
   display: flex;
   align-items: center;

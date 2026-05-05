@@ -32,6 +32,25 @@ function normalizeBoard(board) {
   return board === 'personal' ? 'personal' : 'work';
 }
 
+// Returns the number of weekdays (Mon–Fri) that have elapsed since dateString.
+function businessDaysSince(dateString) {
+  if (!dateString) return 0;
+  const start = new Date(dateString);
+  const end = new Date();
+  start.setHours(0, 0, 0, 0);
+  end.setHours(0, 0, 0, 0);
+  if (end <= start) return 0;
+  let count = 0;
+  const cur = new Date(start);
+  cur.setDate(cur.getDate() + 1);
+  while (cur <= end) {
+    const dow = cur.getDay();
+    if (dow >= 1 && dow <= 5) count++;
+    cur.setDate(cur.getDate() + 1);
+  }
+  return count;
+}
+
 function taskDocument() {
   return {
     schemaVersion: taskDocumentState.schemaVersion || 2,
@@ -298,6 +317,7 @@ function createTaskCard(task) {
   card.dataset.id = task.id;
   card.dataset.board = task.board;
   card.tabIndex = 0;
+  if (businessDaysSince(task.updatedAt) >= 7) card.dataset.stale = 'true';
 
   const header = document.createElement('div');
   header.className = 'task-card-header';
