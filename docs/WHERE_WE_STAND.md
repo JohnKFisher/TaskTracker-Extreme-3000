@@ -5,8 +5,8 @@ TaskTracker Extreme 3000
 
 ## Current Version / Build
 - Version source of truth: `version.json`
-- Current marketing version: `2.4.0`
-- Current build number: `17`
+- Current marketing version: `2.6.0`
+- Current build number: `25`
 
 ## Overall Status
 Working personal-use Tauri desktop app with a revisioned local/shared JSON data model, secure Desk365 credential storage, explicit shared-storage status reporting, and a checked-in deterministic version/build workflow. The app now includes an optional Personal board alongside Work Tasks, configurable column visibility (Standing can be hidden), an on-startup GitHub release check with clickable update banner, auto-capitalization of task titles, polished settings page, a new-ticket shortcut button on the tickets tab, and a refreshed light-mode app icon. All CI/release workflows are operational and have produced multiple successful releases through v2.4.0.
@@ -22,6 +22,11 @@ Working personal-use Tauri desktop app with a revisioned local/shared JSON data 
 - Task titles are auto-capitalized on entry (both main board and quick-add window)
 - Pin (always-on-top) button is visually distinct: gray/dimmed when off, red when active
 - On-startup GitHub release check: if a newer version is published, a persistent clickable banner appears linking to the releases page; silent on network failure
+- Task cards are keyboard-navigable: Tab to focus, arrow keys move between cards, Enter expands, Escape collapses, Delete/Backspace triggers delete confirm
+- Delete confirm dialog has a third option — Move to Done — which moves the task without tombstoning it
+- Cards older than 7 business days (by createdAt) show a faint amber tint as a staleness indicator
+- Card expand/collapse has a smooth fade+slide animation on open
+- Card hover has a more pronounced 3D lift effect with a deeper matching shadow
 - Notes tab with persisted plain-JSON storage plus conflict-aware save blocking
 - Desk365 ticket integration with secure API-key storage and periodic polling
 - New ticket "+" button in the tickets bar opens the Desk365 create-ticket page; hidden until domain is configured
@@ -87,4 +92,4 @@ Working personal-use Tauri desktop app with a revisioned local/shared JSON data 
 5. Consider a minor version bump if any further meaningful features land before the next planned release
 
 ## Most Recent Durable Known-Good Anchor
-v2.4.0 — released 2026-04-17. All CI workflows operational. Icon, settings, update check, Standing column toggle, and new-ticket button all included.
+v2.6.0 — released 2026-05-05. Keyboard nav, Move to Done dialog option, stale task tint, card expand animation, 3D hover, and autosave-during-edit fix all included.

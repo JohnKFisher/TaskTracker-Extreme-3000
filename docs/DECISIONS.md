@@ -123,3 +123,19 @@ Status: approved
 ## 2026-04-17 — Remove legacy hardcoded personal OneDrive path from migration helper
 Rationale: The legacy import path contained a personal organization name. Since the migration is one-time and flagged complete on any machine that has already run the app, the path can be removed without data loss risk. The function now returns None.
 Status: approved
+
+## 2026-05-05 — Suppress renderAllColumns during active task card edit
+Rationale: The notes textarea called saveTasks on every keystroke; the resulting persistTasks call replaced the tasks array and re-rendered all columns, destroying the expanded card mid-edit. Now renderAllColumns is skipped when a card is expanded, and DOM values are patched back into the newly-created task object so in-flight edits are not lost.
+Status: approved
+
+## 2026-05-05 — Keyboard navigation on task cards
+Rationale: Cards are now focusable (tabIndex 0). Arrow keys navigate within a column, Enter expands, Escape collapses with focus restored, and Delete/Backspace triggers the delete confirm. Reduces mouse dependency for common board operations.
+Status: approved
+
+## 2026-05-05 — Move to Done option in delete confirm dialog
+Rationale: When clicking the delete X on a task, a third button between Cancel and Delete lets the user move the task to Done instead of deleting it. Uses the existing column-move path so the task participates in sync and auto-purge normally.
+Status: approved
+
+## 2026-05-05 — Stale task tint based on createdAt, 7 business days threshold
+Rationale: Cards whose createdAt is 7+ weekdays old get a faint amber background tint so long-lived tasks are visually distinguishable. Uses createdAt (not updatedAt) so editing a task does not reset the indicator. Threshold counts Mon–Fri only.
+Status: approved
