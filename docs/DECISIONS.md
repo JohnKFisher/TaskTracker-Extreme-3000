@@ -139,3 +139,31 @@ Status: approved
 ## 2026-05-05 — Stale task tint based on createdAt, 7 business days threshold
 Rationale: Cards whose createdAt is 7+ weekdays old get a faint amber background tint so long-lived tasks are visually distinguishable. Uses createdAt (not updatedAt) so editing a task does not reset the indicator. Threshold counts Mon–Fri only.
 Status: approved
+
+## 2026-05-06 — Stale tint strength increased from 7% to 18% amber color-mix
+Rationale: The original 7% amber tint was too subtle to be useful in practice. Bumped to 18% to make stale cards clearly distinguishable without being visually noisy.
+Status: approved
+
+## 2026-05-06 — Apply stale tint to Desk365 ticket cards at 5 business days
+Rationale: Tickets that have not been updated in 5+ business days should be visually flagged the same way tasks are, using the same amber tint and the shared businessDaysSince utility. Threshold is 5 days (not 7) since tickets tend to move faster than kanban tasks.
+Status: approved
+
+## 2026-05-06 — Suppress renderAllColumns when a task card is expanded
+Rationale: Remote-triggered loadTasks calls were re-rendering the board mid-edit, collapsing the expanded card and discarding in-flight text. loadTasks now mirrors the same expanded-card guard that persistTasks already had: skip re-render when a card is open, and patch current input values back into the task model so nothing is lost.
+Status: approved
+
+## 2026-05-06 — Adaptive reconcile interval: 60s start, +10s per quiet cycle, 5 min max
+Rationale: A fixed 60-second reconcile sweep is wasteful in GCS mode (primary sync path) and folder mode (file watcher handles live changes). The interval now starts at 60s and grows by 10s each quiet cycle up to 5 minutes. A real file-watcher event resets it to 60s immediately, keeping worst-case lag at 5 minutes for GCS while reducing polling noise during quiet periods.
+Status: approved
+
+## 2026-05-06 — Optional GCS sync backend as alternative to folder-based sync
+Rationale: iCloud Drive folder sync has reliability issues (slow propagation, .icloud placeholder files, Windows requires iCloud app). An optional Google Cloud Storage path using a service account key provides direct HTTP-based sync that works identically on both platforms with no cloud drive app required. Folder sync remains the fallback. GCS credentials are stored in local-settings.json (machine-local, not synced). The existing revisioned JSON document model is preserved; GCS replaces only the file I/O layer.
+Status: approved
+
+## 2026-05-06 — GCS migration utility copies existing files to bucket on first GCS setup
+Rationale: A one-time migrate command uploads current tasks, notes, config, and hidden-ticket files from local/sync-folder storage to the configured GCS bucket, allowing a smooth transition without manual file management. Existing GCS data is overwritten by the migration; this is safe because the migration is owner-initiated.
+Status: approved
+
+## 2026-05-06 — Skip .icloud placeholder files in shared-data watcher
+Rationale: iCloud Drive creates zero-byte .icloud placeholder files (e.g. tasks.json.icloud) when the real file has not yet downloaded locally. The file watcher was triggering on these paths and attempting to read them as valid JSON. Paths ending in .icloud are now filtered out before any read attempt.
+Status: approved
