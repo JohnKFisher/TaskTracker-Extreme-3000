@@ -257,6 +257,31 @@
         <div id="sync-folder-result" class="info-card-message info hidden"></div>
       </div>
 
+      <div class="settings-section">
+        <div class="settings-section-title">Google Cloud Storage Sync <span class="settings-optional-badge">optional</span></div>
+        <p class="settings-hint">
+          Alternative to a sync folder. Provide a GCS service account key file and bucket name to sync tasks and notes directly through Google Cloud Storage. GCS sync takes priority over the sync folder when active.
+        </p>
+        <div class="settings-field">
+          <label class="settings-field-label" for="gcs-credential-path">Service account key file</label>
+          <div class="settings-inline">
+            <input id="gcs-credential-path" type="text" class="settings-text-input" placeholder="Path to service account .json key file" readonly />
+            <button id="btn-browse-gcs-credential" type="button" class="settings-btn">Browse…</button>
+          </div>
+        </div>
+        <div class="settings-field">
+          <label class="settings-field-label" for="gcs-bucket">Bucket name</label>
+          <input id="gcs-bucket" type="text" class="settings-text-input" placeholder="e.g. yourname-tasktracker-sync" />
+        </div>
+        <div class="settings-buttons">
+          <button id="btn-test-gcs" type="button" class="settings-btn">Test Connection</button>
+          <button id="btn-save-gcs" type="button" class="settings-btn settings-btn-primary">Save GCS Config</button>
+          <button id="btn-migrate-gcs" type="button" class="settings-btn hidden">Migrate Existing Files to GCS</button>
+          <button id="btn-clear-gcs" type="button" class="settings-btn settings-btn-danger hidden">Disable GCS Sync</button>
+        </div>
+        <div id="gcs-result" class="info-card-message info hidden"></div>
+      </div>
+
       <div id="about-section" class="settings-section">
         <div class="settings-section-title">About</div>
         <div class="info-card">

@@ -24,3 +24,4 @@ tauri = { version = "2", features = ["tray-icon"] }
 tauri-plugin-single-instance = "2"
 tauri-plugin-global-shortcut = "2"
 notify = "6"
+jsonwebtoken = "9"

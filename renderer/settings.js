@@ -27,6 +27,7 @@ function applyLocalSettings(settings) {
   }
   updateColorThemeToggle(settings.colorTheme || 'auto');
   window.applyColorTheme(settings.colorTheme || 'auto');
+  updateGcsDisplay(settings.gcsCredentialPath || null, settings.gcsBucket || null);
 }
 
 function updateColorThemeToggle(theme) {
@@ -91,7 +92,11 @@ function renderStorageStatus(status) {
   const modeValue = document.getElementById('storage-mode-value');
   const message = document.getElementById('storage-message');
 
-  if (status.mode === 'sync') {
+  if (status.mode === 'gcs') {
+    modeValue.textContent = `Using GCS bucket: ${status.activePath}`;
+    message.classList.add('hidden');
+    message.textContent = '';
+  } else if (status.mode === 'sync') {
     modeValue.textContent = `Using shared folder: ${status.activePath}`;
     message.classList.add('hidden');
     message.textContent = '';
@@ -108,6 +113,33 @@ function renderStorageStatus(status) {
     message.classList.add('hidden');
     message.textContent = '';
   }
+}
+
+function updateGcsDisplay(credentialPath, bucket) {
+  const credentialInput = document.getElementById('gcs-credential-path');
+  const bucketInput = document.getElementById('gcs-bucket');
+  const migrateBtn = document.getElementById('btn-migrate-gcs');
+  const clearBtn = document.getElementById('btn-clear-gcs');
+
+  credentialInput.value = credentialPath || '';
+  bucketInput.value = bucket || '';
+
+  const isActive = Boolean(credentialPath && bucket);
+  migrateBtn.classList.toggle('hidden', !isActive);
+  clearBtn.classList.toggle('hidden', !isActive);
+}
+
+function renderGcsResult(message, tone = 'info') {
+  const el = document.getElementById('gcs-result');
+  if (!message) {
+    el.classList.add('hidden');
+    el.classList.remove('info', 'warning', 'danger');
+    el.textContent = '';
+    return;
+  }
+  el.textContent = message;
+  el.classList.remove('hidden', 'info', 'warning', 'danger');
+  el.classList.add(tone);
 }
 
 function renderSyncFolderNotice(message, tone = 'info') {
@@ -210,6 +242,85 @@ document.getElementById('btn-open-github').addEventListener('click', async () =>
     await window.openExternal(window.appMetadata.githubUrl);
   } catch (error) {
     console.error('Failed to open GitHub URL:', error);
+  }
+});
+
+document.getElementById('btn-browse-gcs-credential').addEventListener('click', async () => {
+  try {
+    const result = await window.__TAURI__.dialog.open({
+      filters: [{ name: 'JSON Key', extensions: ['json'] }],
+      multiple: false,
+    });
+    if (!result) return;
+    const path = typeof result === 'string' ? result : result.path ?? result;
+    document.getElementById('gcs-credential-path').value = path;
+    renderGcsResult(null);
+  } catch (error) {
+    renderGcsResult(error.message || 'Could not open file picker.', 'danger');
+  }
+});
+
+document.getElementById('btn-test-gcs').addEventListener('click', async () => {
+  const credentialPath = document.getElementById('gcs-credential-path').value.trim();
+  const bucket = document.getElementById('gcs-bucket').value.trim();
+  if (!credentialPath || !bucket) {
+    renderGcsResult('Enter both a credential file path and a bucket name before testing.', 'warning');
+    return;
+  }
+  renderGcsResult('Testing connection…');
+  try {
+    const result = await window.callCommand('test_gcs_connection', { credentialPath, bucket });
+    renderGcsResult(result, 'info');
+  } catch (error) {
+    renderGcsResult(error.message || 'Connection test failed.', 'danger');
+  }
+});
+
+document.getElementById('btn-save-gcs').addEventListener('click', async () => {
+  const credentialPath = document.getElementById('gcs-credential-path').value.trim();
+  const bucket = document.getElementById('gcs-bucket').value.trim();
+  if (!credentialPath || !bucket) {
+    renderGcsResult('Enter both a credential file path and a bucket name.', 'warning');
+    return;
+  }
+  try {
+    const status = await saveLocalSettingsPatch({ gcsCredentialPath: credentialPath, gcsBucket: bucket });
+    updateGcsDisplay(credentialPath, bucket);
+    renderGcsResult(`GCS sync enabled for bucket "${bucket}". Existing files will load from GCS on next sync.`, 'info');
+    renderStorageStatus(status);
+    await window.refreshStorageStatus();
+  } catch (error) {
+    renderGcsResult(error.message || 'Could not save GCS config.', 'danger');
+  }
+});
+
+document.getElementById('btn-migrate-gcs').addEventListener('click', async () => {
+  const confirmed = confirm(
+    'This will copy your current local/sync-folder tasks, notes, and settings into GCS. Any existing GCS data will be overwritten. Continue?'
+  );
+  if (!confirmed) return;
+  renderGcsResult('Migrating files to GCS…');
+  try {
+    const result = await window.callCommand('migrate_to_gcs');
+    renderGcsResult(result, 'info');
+  } catch (error) {
+    renderGcsResult(error.message || 'Migration failed.', 'danger');
+  }
+});
+
+document.getElementById('btn-clear-gcs').addEventListener('click', async () => {
+  const confirmed = confirm(
+    'Disable GCS sync? The app will fall back to local or sync-folder storage. Your data in GCS will not be deleted.'
+  );
+  if (!confirmed) return;
+  try {
+    const status = await saveLocalSettingsPatch({ gcsCredentialPath: null, gcsBucket: null });
+    updateGcsDisplay(null, null);
+    renderGcsResult('GCS sync disabled. Falling back to local/sync-folder storage.', 'info');
+    renderStorageStatus(status);
+    await window.refreshStorageStatus();
+  } catch (error) {
+    renderGcsResult(error.message || 'Could not disable GCS sync.', 'danger');
   }
 });
 
