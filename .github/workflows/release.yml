@@ -105,6 +105,10 @@ jobs:
       - name: Verify checked-in version metadata
         run: node scripts/version-sync.js --check
 
+      - name: Rust check
+        run: cargo check
+        working-directory: src-tauri
+
       - name: Build and upload release assets
         uses: tauri-apps/tauri-action@v0
         env:
