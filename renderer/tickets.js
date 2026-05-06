@@ -113,6 +113,7 @@ function renderTickets() {
     const isHidden = hiddenNumbers.has(ticket.TicketNumber);
     const card = document.createElement('div');
     card.className = `ticket-card${isHidden ? ' hidden-ticket' : ''}`;
+    if (window.businessDaysSince(ticket.UpdatedAt) >= 5) card.dataset.stale = 'true';
 
     const info = document.createElement('button');
     info.className = 'ticket-info';

@@ -2043,6 +2043,10 @@ fn emit_shared_data_change(app: &AppHandle, files: Vec<String>) {
 fn relevant_shared_files(paths: &[PathBuf]) -> Vec<String> {
     let mut names = BTreeSet::new();
     for path in paths {
+        // Skip iCloud placeholder files (.tasks.json.icloud, etc.)
+        if path.to_str().map_or(false, |s| s.ends_with(".icloud")) {
+            continue;
+        }
         let Some(filename) = path.file_name().and_then(|entry| entry.to_str()) else {
             continue;
         };

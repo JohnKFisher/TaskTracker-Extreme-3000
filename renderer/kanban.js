@@ -51,6 +51,8 @@ function businessDaysSince(dateString) {
   return count;
 }
 
+window.businessDaysSince = businessDaysSince;
+
 function taskDocument() {
   return {
     schemaVersion: taskDocumentState.schemaVersion || 2,
@@ -222,6 +224,18 @@ async function loadTasks(options = {}) {
     if (!silent) {
       window.showAppNotice(error.message || 'Could not load shared tasks.', 'danger', 7000);
     }
+  }
+
+  const expandedCard = document.querySelector('.task-card.expanded');
+  if (expandedCard) {
+    const expandedTask = tasks.find((t) => t.id === expandedCard.dataset.id);
+    if (expandedTask) {
+      const titleInput = expandedCard.querySelector('.task-title-input');
+      const notesArea = expandedCard.querySelector('.task-notes-area');
+      if (titleInput) expandedTask.title = titleInput.value;
+      if (notesArea) expandedTask.notes = notesArea.value;
+    }
+    return;
   }
 
   renderAllColumns();
