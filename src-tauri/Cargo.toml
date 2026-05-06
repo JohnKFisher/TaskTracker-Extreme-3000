@@ -19,13 +19,8 @@ serde_json = "1"
 reqwest = { version = "0.12", features = ["json", "rustls-tls"], default-features = false }
 tokio = { version = "1", features = ["full"] }
 
-# Desktop-only dependencies (not available / not needed on iOS)
 [target.'cfg(not(target_os = "ios"))'.dependencies]
 tauri = { version = "2", features = ["tray-icon"] }
 tauri-plugin-single-instance = "2"
 tauri-plugin-global-shortcut = "2"
 notify = "6"
-
-# iOS-only dependencies
-[target.'cfg(target_os = "ios")'.dependencies]
-objc2-foundation = "0.2"
