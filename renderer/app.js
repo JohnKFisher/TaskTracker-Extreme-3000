@@ -2,7 +2,10 @@ const invoke = window.__TAURI__.core.invoke;
 const listen = window.__TAURI__.event.listen;
 const currentWindow = window.__TAURI__.window.getCurrentWindow();
 const isMacPlatform = /\bMac\b/.test(navigator.userAgent);
-const SHARED_DATA_RECONCILE_INTERVAL = 60 * 1000;
+const RECONCILE_MIN_MS = 60 * 1000;
+const RECONCILE_MAX_MS = 5 * 60 * 1000;
+const RECONCILE_STEP_MS = 10 * 1000;
+let reconcileInterval = RECONCILE_MIN_MS;
 const beforeQuitHooks = [];
 const saveHooks = [];
 let quitInProgress = false;
@@ -212,12 +215,20 @@ window.openExternal = async function openExternal(url) {
   return callCommand('open_external_url', { url });
 };
 
-function startSharedDataReconcile() {
-  if (reconcileTimer) clearInterval(reconcileTimer);
-  reconcileTimer = setInterval(async () => {
+function scheduleReconcile() {
+  if (reconcileTimer) clearTimeout(reconcileTimer);
+  reconcileTimer = setTimeout(async () => {
+    reconcileTimer = null;
     await window.refreshStorageStatus();
     window.dispatchEvent(new CustomEvent('shared-data-reconcile'));
-  }, SHARED_DATA_RECONCILE_INTERVAL);
+    reconcileInterval = Math.min(reconcileInterval + RECONCILE_STEP_MS, RECONCILE_MAX_MS);
+    scheduleReconcile();
+  }, reconcileInterval);
+}
+
+function startSharedDataReconcile() {
+  reconcileInterval = RECONCILE_MIN_MS;
+  scheduleReconcile();
 }
 
 async function saveAndQuit() {
@@ -354,6 +365,8 @@ listen('tasks-updated', () => {
 });
 
 listen('shared-data-changed', (event) => {
+  reconcileInterval = RECONCILE_MIN_MS;
+  scheduleReconcile();
   window.dispatchEvent(new CustomEvent('shared-data-changed', {
     detail: event.payload || { files: [] },
   }));
