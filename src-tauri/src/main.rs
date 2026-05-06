@@ -2378,7 +2378,7 @@ fn sync_shared_data_watcher(app: &AppHandle) -> Result<(), AppError> {
 }
 
 #[tauri::command]
-async fn load_tasks(state: State<'_, AppState>, app: AppHandle) -> CommandResponse<TaskDocument> {
+async fn load_tasks(state: State<'_, AppState>, app: AppHandle) -> Result<CommandResponse<TaskDocument>, ()> {
     let (settings, gcs) = {
         let s = state.local_settings.lock().unwrap().clone();
         let g = state.gcs_client.lock().unwrap().clone();
@@ -2389,10 +2389,10 @@ async fn load_tasks(state: State<'_, AppState>, app: AppHandle) -> CommandRespon
     } else {
         read_tasks_document(&settings, &app)
     };
-    match result {
+    Ok(match result {
         Ok(document) => CommandResponse::ok(document),
         Err(err) => CommandResponse::err(&err.code, err.message),
-    }
+    })
 }
 
 #[tauri::command]
@@ -2400,7 +2400,7 @@ async fn save_tasks(
     document: TaskDocument,
     state: State<'_, AppState>,
     app: AppHandle,
-) -> CommandResponse<TaskSaveResult> {
+) -> Result<CommandResponse<TaskSaveResult>, ()> {
     let (settings, gcs) = {
         let s = state.local_settings.lock().unwrap().clone();
         let g = state.gcs_client.lock().unwrap().clone();
@@ -2408,10 +2408,10 @@ async fn save_tasks(
     };
     let device_id = settings.device_id.clone().unwrap_or_else(generate_device_id);
 
-    if let Some(client) = gcs {
+    Ok(if let Some(client) = gcs {
         let latest = match gcs_read_tasks(&client).await {
             Ok(doc) => doc,
-            Err(err) => return CommandResponse::err(&err.code, err.message),
+            Err(err) => return Ok(CommandResponse::err(&err.code, err.message)),
         };
         let incoming = normalize_task_document(document);
         let merged = latest.revision != incoming.revision;
@@ -2421,10 +2421,10 @@ async fn save_tasks(
         let content = match serde_json::to_string_pretty(&saved_document) {
             Ok(c) => c,
             Err(e) => {
-                return CommandResponse::err(
+                return Ok(CommandResponse::err(
                     "write_failed",
                     &format!("Could not serialize tasks: {e}"),
-                )
+                ))
             }
         };
         match gcs_put_text(&client, TASKS_FILE, &content).await {
@@ -2438,7 +2438,7 @@ async fn save_tasks(
     } else {
         let latest = match read_tasks_document(&settings, &app) {
             Ok(doc) => doc,
-            Err(err) => return CommandResponse::err(&err.code, err.message),
+            Err(err) => return Ok(CommandResponse::err(&err.code, err.message)),
         };
         let incoming = normalize_task_document(document);
         let merged = latest.revision != incoming.revision;
@@ -2453,14 +2453,14 @@ async fn save_tasks(
             }),
             Err(err) => CommandResponse::err(&err.code, err.message),
         }
-    }
+    })
 }
 
 #[tauri::command]
 async fn load_notes(
     state: State<'_, AppState>,
     app: AppHandle,
-) -> CommandResponse<NotesDocument> {
+) -> Result<CommandResponse<NotesDocument>, ()> {
     let (settings, gcs) = {
         let s = state.local_settings.lock().unwrap().clone();
         let g = state.gcs_client.lock().unwrap().clone();
@@ -2471,10 +2471,10 @@ async fn load_notes(
     } else {
         read_notes_document(&settings, &app)
     };
-    match result {
+    Ok(match result {
         Ok(document) => CommandResponse::ok(document),
         Err(err) => CommandResponse::err(&err.code, err.message),
-    }
+    })
 }
 
 #[tauri::command]
@@ -2482,7 +2482,7 @@ async fn save_notes(
     document: NotesDocument,
     state: State<'_, AppState>,
     app: AppHandle,
-) -> CommandResponse<NotesSaveResult> {
+) -> Result<CommandResponse<NotesSaveResult>, ()> {
     let (settings, gcs) = {
         let s = state.local_settings.lock().unwrap().clone();
         let g = state.gcs_client.lock().unwrap().clone();
@@ -2493,12 +2493,12 @@ async fn save_notes(
     let latest = if let Some(ref client) = gcs {
         match gcs_read_notes(client).await {
             Ok(doc) => doc,
-            Err(err) => return CommandResponse::err(&err.code, err.message),
+            Err(err) => return Ok(CommandResponse::err(&err.code, err.message)),
         }
     } else {
         match read_notes_document(&settings, &app) {
             Ok(doc) => doc,
-            Err(err) => return CommandResponse::err(&err.code, err.message),
+            Err(err) => return Ok(CommandResponse::err(&err.code, err.message)),
         }
     };
 
@@ -2515,10 +2515,10 @@ async fn save_notes(
     let content_changed = incoming.meeting_notes != latest.meeting_notes
         || incoming.general_notes != latest.general_notes;
     if latest.revision != incoming.revision && content_changed {
-        return CommandResponse::ok(NotesSaveResult {
+        return Ok(CommandResponse::ok(NotesSaveResult {
             document: latest,
             conflict: true,
-        });
+        }));
     }
 
     let saved_document = NotesDocument {
@@ -2531,14 +2531,14 @@ async fn save_notes(
         general_notes: incoming.general_notes,
     };
 
-    if let Some(client) = gcs {
+    Ok(if let Some(client) = gcs {
         let content = match serde_json::to_string_pretty(&saved_document) {
             Ok(c) => c,
             Err(e) => {
-                return CommandResponse::err(
+                return Ok(CommandResponse::err(
                     "write_failed",
                     &format!("Could not serialize notes: {e}"),
-                )
+                ))
             }
         };
         match gcs_put_text(&client, NOTES_FILE, &content).await {
@@ -2556,14 +2556,14 @@ async fn save_notes(
             }),
             Err(err) => CommandResponse::err(&err.code, err.message),
         }
-    }
+    })
 }
 
 #[tauri::command]
 async fn load_hidden_tickets(
     state: State<'_, AppState>,
     app: AppHandle,
-) -> CommandResponse<HiddenTicketsDocument> {
+) -> Result<CommandResponse<HiddenTicketsDocument>, ()> {
     let (settings, gcs) = {
         let s = state.local_settings.lock().unwrap().clone();
         let g = state.gcs_client.lock().unwrap().clone();
@@ -2574,10 +2574,10 @@ async fn load_hidden_tickets(
     } else {
         read_hidden_tickets_document(&settings, &app)
     };
-    match result {
+    Ok(match result {
         Ok(document) => CommandResponse::ok(document),
         Err(err) => CommandResponse::err(&err.code, err.message),
-    }
+    })
 }
 
 #[tauri::command]
@@ -2585,7 +2585,7 @@ async fn save_hidden_tickets(
     document: HiddenTicketsDocument,
     state: State<'_, AppState>,
     app: AppHandle,
-) -> CommandResponse<HiddenTicketsSaveResult> {
+) -> Result<CommandResponse<HiddenTicketsSaveResult>, ()> {
     let (settings, gcs) = {
         let s = state.local_settings.lock().unwrap().clone();
         let g = state.gcs_client.lock().unwrap().clone();
@@ -2593,10 +2593,10 @@ async fn save_hidden_tickets(
     };
     let device_id = settings.device_id.clone().unwrap_or_else(generate_device_id);
 
-    if let Some(client) = gcs {
+    Ok(if let Some(client) = gcs {
         let latest = match gcs_read_hidden_tickets(&client).await {
             Ok(doc) => doc,
-            Err(err) => return CommandResponse::err(&err.code, err.message),
+            Err(err) => return Ok(CommandResponse::err(&err.code, err.message)),
         };
         let incoming = normalize_hidden_tickets_document(document);
         let merged = latest.revision != incoming.revision;
@@ -2605,10 +2605,10 @@ async fn save_hidden_tickets(
         let content = match serde_json::to_string_pretty(&saved_document) {
             Ok(c) => c,
             Err(e) => {
-                return CommandResponse::err(
+                return Ok(CommandResponse::err(
                     "write_failed",
                     &format!("Could not serialize hidden tickets: {e}"),
-                )
+                ))
             }
         };
         match gcs_put_text(&client, HIDDEN_TICKETS_FILE, &content).await {
@@ -2621,7 +2621,7 @@ async fn save_hidden_tickets(
     } else {
         let latest = match read_hidden_tickets_document(&settings, &app) {
             Ok(doc) => doc,
-            Err(err) => return CommandResponse::err(&err.code, err.message),
+            Err(err) => return Ok(CommandResponse::err(&err.code, err.message)),
         };
         let incoming = normalize_hidden_tickets_document(document);
         let merged = latest.revision != incoming.revision;
@@ -2634,24 +2634,24 @@ async fn save_hidden_tickets(
             }),
             Err(err) => CommandResponse::err(&err.code, err.message),
         }
-    }
+    })
 }
 
 #[tauri::command]
 async fn load_ticket_settings(
     state: State<'_, AppState>,
     app: AppHandle,
-) -> CommandResponse<TicketSettingsState> {
+) -> Result<CommandResponse<TicketSettingsState>, ()> {
     let (settings, gcs, auth_error) = {
         let s = state.local_settings.lock().unwrap().clone();
         let g = state.gcs_client.lock().unwrap().clone();
         let a = state.ticket_auth_error.lock().unwrap().clone();
         (s, g, a)
     };
-    if let Some(client) = gcs {
+    Ok(if let Some(client) = gcs {
         let document = match gcs_read_ticket_settings(&client).await {
             Ok(doc) => doc,
-            Err(err) => return CommandResponse::err(&err.code, err.message),
+            Err(err) => return Ok(CommandResponse::err(&err.code, err.message)),
         };
         let (has_api_key, store_error) = match KeyringCredentialStore.get_api_key() {
             Ok(value) => (value.is_some(), None),
@@ -2669,7 +2669,7 @@ async fn load_ticket_settings(
             Ok(ts) => CommandResponse::ok(ts),
             Err(err) => CommandResponse::err(&err.code, err.message),
         }
-    }
+    })
 }
 
 #[tauri::command]
@@ -2677,13 +2677,13 @@ async fn save_ticket_settings(
     desk365_domain: String,
     state: State<'_, AppState>,
     app: AppHandle,
-) -> CommandResponse<()> {
+) -> Result<CommandResponse<()>, ()> {
     let domain = desk365_domain.trim();
     if !is_valid_hostname(domain) {
-        return CommandResponse::err(
+        return Ok(CommandResponse::err(
             "invalid_domain",
             "Enter a Desk365 hostname only, for example yourcompany.desk365.io.",
-        );
+        ));
     }
     let (settings, gcs) = {
         let s = state.local_settings.lock().unwrap().clone();
@@ -2692,10 +2692,10 @@ async fn save_ticket_settings(
     };
     let device_id = settings.device_id.clone().unwrap_or_else(generate_device_id);
 
-    if let Some(client) = gcs {
+    Ok(if let Some(client) = gcs {
         let current = match gcs_read_ticket_settings(&client).await {
             Ok(doc) => doc,
-            Err(err) => return CommandResponse::err(&err.code, err.message),
+            Err(err) => return Ok(CommandResponse::err(&err.code, err.message)),
         };
         let document = TicketSettingsDocument {
             schema_version: ticket_settings_schema_version(),
@@ -2707,10 +2707,10 @@ async fn save_ticket_settings(
         let content = match serde_json::to_string_pretty(&document) {
             Ok(c) => c,
             Err(e) => {
-                return CommandResponse::err(
+                return Ok(CommandResponse::err(
                     "write_failed",
                     &format!("Could not serialize ticket settings: {e}"),
-                )
+                ))
             }
         };
         match gcs_put_text(&client, TICKET_SETTINGS_FILE, &content).await {
@@ -2720,7 +2720,7 @@ async fn save_ticket_settings(
     } else {
         let current_document = match read_ticket_settings_document(&settings, &app) {
             Ok(doc) => doc,
-            Err(err) => return CommandResponse::err(&err.code, err.message),
+            Err(err) => return Ok(CommandResponse::err(&err.code, err.message)),
         };
         let document = TicketSettingsDocument {
             schema_version: ticket_settings_schema_version(),
@@ -2733,7 +2733,7 @@ async fn save_ticket_settings(
             Ok(_) => CommandResponse::ok(()),
             Err(err) => CommandResponse::err(&err.code, err.message),
         }
-    }
+    })
 }
 
 #[tauri::command]
@@ -3252,26 +3252,25 @@ async fn test_gcs_connection(
 async fn migrate_to_gcs(
     state: State<'_, AppState>,
     app: AppHandle,
-) -> CommandResponse<String> {
+) -> Result<CommandResponse<String>, ()> {
     let (settings, gcs) = {
         let s = state.local_settings.lock().unwrap().clone();
         let g = state.gcs_client.lock().unwrap().clone();
         (s, g)
     };
     let Some(client) = gcs else {
-        return CommandResponse::err("gcs_not_configured", "GCS is not configured. Save your credential path and bucket first.");
+        return Ok(CommandResponse::err("gcs_not_configured", "GCS is not configured. Save your credential path and bucket first."));
     };
 
-    // Read from the best available local source (sync folder, then local app data).
     let source_dir = if let Some(folder) = settings.sync_folder.as_deref() {
         PathBuf::from(folder)
     } else if let Ok(dir) = local_app_data_dir(&app) {
         dir
     } else {
-        return CommandResponse::err(
+        return Ok(CommandResponse::err(
             "source_unavailable",
             "Could not locate any local shared-data to migrate.",
-        );
+        ));
     };
 
     let mut uploaded: Vec<&str> = Vec::new();
@@ -3292,26 +3291,26 @@ async fn migrate_to_gcs(
     }
 
     if !errors.is_empty() {
-        return CommandResponse::err(
+        return Ok(CommandResponse::err(
             "migrate_partial",
             &format!(
                 "Uploaded {} file(s) but encountered errors — {}",
                 uploaded.len(),
                 errors.join("; ")
             ),
-        );
+        ));
     }
     if uploaded.is_empty() {
-        return CommandResponse::ok(
+        return Ok(CommandResponse::ok(
             "No existing shared-data files were found to migrate.".to_string(),
-        );
+        ));
     }
-    CommandResponse::ok(format!(
+    Ok(CommandResponse::ok(format!(
         "Migrated {} file{} to GCS: {}",
         uploaded.len(),
         if uploaded.len() == 1 { "" } else { "s" },
         uploaded.join(", ")
-    ))
+    )))
 }
 
 fn main() {
