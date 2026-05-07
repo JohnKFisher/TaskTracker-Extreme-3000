@@ -2940,17 +2940,35 @@ async fn fetch_tickets(
     state: State<'_, AppState>,
     app: AppHandle,
 ) -> Result<CommandResponse<Value>, String> {
-    let settings = state.local_settings.lock().unwrap().clone();
-    let ticket_settings = match read_ticket_settings_document(&settings, &app) {
-        Ok(document) => document,
-        Err(err) => return Ok(CommandResponse::err(&err.code, err.message)),
+    let (settings, gcs) = {
+        let s = state.local_settings.lock().unwrap().clone();
+        let g = state.gcs_client.lock().unwrap().clone();
+        (s, g)
     };
 
-    let Some(desk365_domain) = ticket_settings.desk365_domain else {
-        return Ok(CommandResponse::err(
-            "missing_domain",
-            "Desk365 is not configured yet. Add your Desk365 hostname and API key first.",
-        ));
+    let desk365_domain = if let Some(client) = gcs {
+        match gcs_read_ticket_settings(&client).await {
+            Ok(doc) => match doc.desk365_domain {
+                Some(domain) => domain,
+                None => return Ok(CommandResponse::err(
+                    "missing_domain",
+                    "Desk365 is not configured yet. Add your Desk365 hostname and API key first.",
+                )),
+            },
+            Err(err) => return Ok(CommandResponse::err(&err.code, err.message)),
+        }
+    } else {
+        let ticket_settings = match read_ticket_settings_document(&settings, &app) {
+            Ok(document) => document,
+            Err(err) => return Ok(CommandResponse::err(&err.code, err.message)),
+        };
+        match ticket_settings.desk365_domain {
+            Some(domain) => domain,
+            None => return Ok(CommandResponse::err(
+                "missing_domain",
+                "Desk365 is not configured yet. Add your Desk365 hostname and API key first.",
+            )),
+        }
     };
 
     let api_key = match KeyringCredentialStore.get_api_key() {
