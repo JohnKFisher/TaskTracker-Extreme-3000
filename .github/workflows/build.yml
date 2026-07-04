@@ -59,8 +59,62 @@ jobs:
         run: cargo check
         working-directory: src-tauri
 
+      - name: Check macOS signing secret availability
+        if: matrix.platform == 'macos-14'
+        id: macos_signing
+        shell: bash
+        env:
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          MACOS_CERTIFICATE_P12_BASE64: ${{ secrets.MACOS_CERTIFICATE_P12_BASE64 }}
+          MACOS_CERTIFICATE_PASSWORD: ${{ secrets.MACOS_CERTIFICATE_PASSWORD }}
+          MACOS_CODESIGN_IDENTITY: ${{ secrets.MACOS_CODESIGN_IDENTITY }}
+          MACOS_KEYCHAIN_PASSWORD: ${{ secrets.MACOS_KEYCHAIN_PASSWORD }}
+        run: |
+          if [ -n "$APPLE_APP_SPECIFIC_PASSWORD" ] \
+            && [ -n "$APPLE_ID" ] \
+            && [ -n "$APPLE_TEAM_ID" ] \
+            && [ -n "$MACOS_CERTIFICATE_P12_BASE64" ] \
+            && [ -n "$MACOS_CERTIFICATE_PASSWORD" ] \
+            && [ -n "$MACOS_CODESIGN_IDENTITY" ] \
+            && [ -n "$MACOS_KEYCHAIN_PASSWORD" ]; then
+            echo "enabled=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "enabled=false" >> "$GITHUB_OUTPUT"
+            echo "::warning::macOS signing/notarization secrets are incomplete; building an unsigned CI artifact"
+          fi
+
+      - name: Import Apple Developer ID certificate
+        if: matrix.platform == 'macos-14' && steps.macos_signing.outputs.enabled == 'true'
+        shell: bash
+        env:
+          MACOS_CERTIFICATE_P12_BASE64: ${{ secrets.MACOS_CERTIFICATE_P12_BASE64 }}
+          MACOS_CERTIFICATE_PASSWORD: ${{ secrets.MACOS_CERTIFICATE_PASSWORD }}
+          MACOS_KEYCHAIN_PASSWORD: ${{ secrets.MACOS_KEYCHAIN_PASSWORD }}
+        run: |
+          certificate_path="$RUNNER_TEMP/developer-id.p12"
+          keychain_path="$RUNNER_TEMP/app-signing.keychain-db"
+
+          printf '%s' "$MACOS_CERTIFICATE_P12_BASE64" | base64 --decode > "$certificate_path"
+          security create-keychain -p "$MACOS_KEYCHAIN_PASSWORD" "$keychain_path"
+          security set-keychain-settings -lut 21600 "$keychain_path"
+          security unlock-keychain -p "$MACOS_KEYCHAIN_PASSWORD" "$keychain_path"
+          security import "$certificate_path" -P "$MACOS_CERTIFICATE_PASSWORD" -A -t cert -f pkcs12 -k "$keychain_path"
+          security list-keychains -d user -s "$keychain_path"
+          security default-keychain -s "$keychain_path"
+          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$MACOS_KEYCHAIN_PASSWORD" "$keychain_path"
+          security find-identity -v -p codesigning "$keychain_path"
+
       - name: Build Tauri app
         uses: tauri-apps/tauri-action@v0
+        env:
+          APPLE_CERTIFICATE: ${{ secrets.MACOS_CERTIFICATE_P12_BASE64 }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.MACOS_CERTIFICATE_PASSWORD }}
+          APPLE_SIGNING_IDENTITY: ${{ secrets.MACOS_CODESIGN_IDENTITY }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
         with:
           args: ${{ matrix.tauri_args }}
 
@@ -68,17 +122,8 @@ jobs:
         if: matrix.platform == 'windows-latest'
         uses: actions/upload-artifact@v6
         with:
-          name: tasktracker-extreme-3000-windows-nsis-installer
+          name: TaskTracker Extreme 3000 - Windows Installer
           path: src-tauri/target/x86_64-pc-windows-msvc/release/bundle/nsis/*.exe
-          if-no-files-found: error
-          retention-days: 30
-
-      - name: Upload Windows portable EXE
-        if: matrix.platform == 'windows-latest'
-        uses: actions/upload-artifact@v6
-        with:
-          name: tasktracker-extreme-3000-windows-portable-exe
-          path: src-tauri/target/x86_64-pc-windows-msvc/release/tasktracker-extreme-3000.exe
           if-no-files-found: error
           retention-days: 30
 
@@ -86,7 +131,7 @@ jobs:
         if: matrix.platform == 'macos-14'
         uses: actions/upload-artifact@v6
         with:
-          name: tasktracker-extreme-3000-macos-universal-dmg
+          name: TaskTracker Extreme 3000 - macOS Universal DMG
           path: src-tauri/target/universal-apple-darwin/release/bundle/dmg/*.dmg
           if-no-files-found: error
           retention-days: 30

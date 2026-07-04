@@ -40,8 +40,8 @@ Status: approved
 Rationale: If the chosen shared-data folder disappears, the app now reports that condition and pauses shared-data access instead of writing divergent local copies. This protects data integrity and makes degraded states visible.
 Status: approved
 
-## 2026-04-11 — Prefer a portable Windows EXE and a universal macOS DMG in CI
-Rationale: For this personal-use app, a portable Windows build is more useful than an installer, while macOS distribution is cleaner as a single universal DMG than as split architecture artifacts. This keeps the default downloads simple and platform-appropriate without adding installer complexity.
+## 2026-04-11 — Prefer one Windows installer and a universal macOS DMG in CI
+Rationale: For this personal-use app, publishing one Windows NSIS installer is less confusing than publishing both an installer and a portable EXE, while macOS distribution is cleaner as a single universal DMG than as split architecture artifacts. This keeps the default downloads simple and platform-appropriate.
 Status: approved
 
 ## 2026-04-11 — Separate push-build artifacts from tagged GitHub releases
@@ -50,7 +50,7 @@ Status: approved
 
 ## 2026-04-12 — Ad-hoc sign macOS CI builds when Apple signing credentials are not configured
 Rationale: A macOS `.app` downloaded from the internet is more reliable on Apple Silicon when it is at least ad-hoc signed, even if full Developer ID signing and notarization are not available yet. This improves the default build quality while still being honest that Gatekeeper exceptions may remain necessary.
-Status: approved
+Status: superseded by Developer ID signing/notarization workflow
 
 ## 2026-04-12 — On macOS, closing the main window saves and quits instead of hiding to tray
 Rationale: The app runs as an accessory on macOS, so hiding the only window makes recovery awkward without a dock icon. Keeping the tray-first hide behavior on Windows preserves the primary-platform workflow while making macOS close semantics practical.

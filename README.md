@@ -1,135 +1,143 @@
 # TaskTracker Extreme 3000
 
-A personal sidebar task manager for Windows and macOS with Desk365 helpdesk integration. Built for my own workflow. Outside usefulness is incidental, and no support, stability guarantees, or warranty of any kind is implied.
+Personal desktop task tracker for a small, always-available work sidebar.
 
-GitHub: [JohnKFisher/TaskTracker-Extreme-3000](https://github.com/JohnKFisher/TaskTracker-Extreme-3000)
+TaskTracker Extreme 3000 is a Tauri app for macOS and Windows. It combines a kanban-style task board, quick task capture, notes, optional Desk365 ticket visibility, and optional shared sync through either a folder or Google Cloud Storage.
 
----
-
-![TaskTracker Extreme 3000](docs/screenshots/main.png)
-
----
-
-## What This Is
-
-A largely vibe-coded personal hobby app that lives on the edge of the screen and keeps tasks, notes, and support work visible without turning into a full desktop suite. Built with [Tauri v2](https://tauri.app) for a lightweight native shell and a plain HTML/CSS/JS renderer.
-
-Windows is the primary UX tie-breaker. macOS is a supported target, but when platform conventions differ, Windows behavior wins unless explicitly documented otherwise.
+More Sidelark Labs projects live at [sidelarklabs.com](https://sidelarklabs.com).
 
 ## What It Does
 
-**Task boards**
-- Kanban-style Work Tasks board with columns: Standing (optional), Priority, In Progress, To-Do, Rainy Day, Done
-- Optional Personal board with the same layout, shown per machine from Settings
-- Drag-and-drop reordering within and between columns
-- Right-click context menu to move tasks between columns
-- Collapsed categories auto-expand when a task is added; Done stays collapsed if you want it that way
-- Tab counts show only active (non-Done) tasks
-- Task titles are auto-capitalized on entry
+- Keeps work and personal tasks in compact kanban boards.
+- Provides a quick-add window for fast capture.
+- Saves notes alongside tasks.
+- Can connect to Desk365 for ticket visibility.
+- Stores the Desk365 API key in the OS credential store.
+- Can sync shared app data through a chosen folder.
+- Can use Google Cloud Storage instead of folder sync.
+- Supports light, dark, and system-following appearance.
+- Builds packaged macOS and Windows artifacts through GitHub Actions.
 
-**Quick capture**
-- Global shortcut (`Ctrl/Cmd+Shift+T`) to show or hide the sidebar
-- Quick-add overlay (`Ctrl/Cmd+Shift+N`) to capture a task without switching windows
+## Local Development
 
-**Tickets**
-- Desk365 ticket integration with secure API-key storage and periodic refresh
-- New ticket "+" button opens the Desk365 create-ticket page directly
-- Hide individual tickets from the list; hidden tickets are visually distinct when revealed
+Requirements:
 
-**Notes**
-- Persistent scratch notes tab, shared across machines via sync folder
+- Node.js and npm
+- Rust
+- macOS or Windows desktop environment supported by Tauri v2
 
-**Always-on-top**
-- Pin button: dimmed when off, red when active — always visible at a glance
-
-**Auto-update check**
-- On startup, checks the GitHub releases API for a newer version
-- If one exists, shows a clickable banner linking to the releases page; silent on network failure
-
-**Settings**
-- Appearance: Light / Dark / Auto theme, saved per machine
-- Layout: toggle Personal tab and Standing column visibility, saved per machine
-- Sync Folder: point to a cloud-synced folder to share tasks, notes, and Desk365 config between machines
-
-## Data, Privacy, And Storage
-
-All user data stays local unless you explicitly configure a sync folder pointing at your own cloud storage. There is no telemetry, analytics, or hidden network activity. The only outbound network calls are to your configured Desk365 account and the GitHub releases API for the version check.
-
-When packaged, local data is stored in the OS app-data folder:
-- **Windows:** `%AppData%\com.tasktracker.extreme3000\`
-- **macOS:** `~/Library/Application Support/com.tasktracker.extreme3000/`
-
-Shared-data files (synced if a sync folder is configured):
-- `tasks.json`
-- `notes.json`
-- `config.json` (Desk365 hostname only — no secrets)
-- `hidden-tickets.json`
-
-Machine-specific files (never synced):
-- `local-settings.json`
-- `window-state.json`
-
-Desk365 API keys are stored in the OS secure credential store, not in any JSON file. Desk365 ticket payloads are not stored in the shared folder — each machine fetches its own live tickets directly.
-
-If a configured sync folder becomes unavailable, the app pauses shared-data access and shows a warning rather than silently writing somewhere else. Shared-folder changes are watched for near-immediate refresh, with a 5-minute reconciliation sweep as a fallback.
-
-## First-Run Desk365 Setup
-
-The Tickets tab will ask for:
-- your Desk365 hostname — stored in `config.json` (e.g. `yourcompany.desk365.io`, no `https://` or path)
-- your Desk365 API key — stored securely in the OS credential store
-
-## Versioning
-
-Version and build metadata comes from the checked-in `version.json` file.
-
-```bash
-npm run version:check   # verify tracked files match version.json
-npm run version:sync    # sync tracked files from version.json
-npm run version:bump    # bump patch version + build number
-```
-
-For a minor or major bump, edit `version.json` directly then run `npm run version:sync`.
-
-## Getting Builds
-
-GitHub Actions builds automatically in two ways:
-
-- Every push to `main` creates downloadable workflow artifacts under **GitHub → Actions → (latest run) → Artifacts**
-- Every push to `main` that changes `version.json` creates or updates a GitHub Release for that version
-
-| Artifact | Platform |
-|---|---|
-| `tasktracker-extreme-3000-windows-portable-exe` | Windows portable EXE |
-| `tasktracker-extreme-3000-macos-universal-dmg` | macOS universal DMG |
-
-Release flow:
-```bash
-npm run version:bump   # or edit version.json manually for minor/major
-git push origin main
-```
-
-> **Platform note:** macOS CI builds are ad-hoc signed but not notarized — you may need `System Settings → Privacy & Security → Open Anyway`. Windows builds are unsigned and may need `More info → Run anyway` on first launch.
-
-## Building From Source
-
-Requires [Rust](https://rustup.rs) and Node.js.
+Install dependencies:
 
 ```bash
 npm install
-npm run version:check
+```
+
+Run the app in development:
+
+```bash
 npm run dev
 ```
 
-For a production build:
+Build locally:
+
 ```bash
-npm run version:check
 npm run build
 ```
 
-## Limitations
+Run the lightweight checks:
 
-- Requires a Desk365 account for ticket integration; task board and notes work without it
-- Shared-data features depend on the configured sync folder remaining reachable
-- Notes are one shared text blob — simultaneous edits on two machines require a manual retry after a conflict warning
-- Tested primarily on the owner's own machines
+```bash
+npm run version:check
+npm run test:version
+cd src-tauri
+cargo check
+```
+
+## Versioning
+
+The checked-in version source of truth is `version.json`.
+
+Useful commands:
+
+```bash
+npm run version:check
+npm run version:sync
+npm run version:bump
+```
+
+`version:check` verifies tracked version fields match `version.json`.
+
+`version:sync` updates tracked version fields from `version.json`.
+
+`version:bump` bumps the patch version and build number.
+
+For minor or major version changes, edit `version.json` intentionally, then run:
+
+```bash
+npm run version:sync
+```
+
+## GitHub Builds
+
+The normal build workflow runs on pushes to `main` and on manual dispatch.
+
+It produces:
+
+| Artifact | Platform |
+|---|---|
+| `TaskTracker Extreme 3000 - Windows Installer` | Windows NSIS installer |
+| `TaskTracker Extreme 3000 - macOS Universal DMG` | macOS universal DMG |
+
+The release workflow runs when `version.json` changes on `main` or when manually dispatched. It creates or updates the GitHub Release for the version in `version.json`.
+
+Release assets use human-readable names and publish one Windows installer plus one macOS universal DMG.
+
+## macOS Signing And Notarization
+
+macOS release builds are designed to use Developer ID signing, Apple notarization, and stapling in GitHub Actions.
+
+Add these GitHub repository secrets:
+
+| Secret | Paste This |
+|---|---|
+| `APPLE_ID` | Your Apple Developer account email address. |
+| `APPLE_APP_SPECIFIC_PASSWORD` | An app-specific password from [appleid.apple.com](https://appleid.apple.com/), not your normal Apple ID password. |
+| `APPLE_TEAM_ID` | Your 10-character Apple Developer Team ID. |
+| `MACOS_CERTIFICATE_P12_BASE64` | Single-line base64 output for the exported Developer ID Application `.p12` certificate. |
+| `MACOS_CERTIFICATE_PASSWORD` | The password used when exporting the `.p12` certificate. |
+| `MACOS_CODESIGN_IDENTITY` | The exact Developer ID Application identity string shown by `security find-identity -v -p codesigning`. |
+| `MACOS_KEYCHAIN_PASSWORD` | A strong temporary password invented for the GitHub Actions keychain. |
+
+Create the base64 certificate value with:
+
+```bash
+openssl base64 -A -in /path/to/DeveloperIDApplication.p12
+```
+
+The signing identity should look like:
+
+```text
+Developer ID Application: Your Name or Company (TEAMID)
+```
+
+The release workflow fails the macOS job if required signing secrets are missing. The regular build workflow warns and can still produce an unsigned macOS CI artifact when the secrets are incomplete.
+
+Windows builds are currently unsigned, so Windows may show SmartScreen friction on first launch.
+
+## Sync Notes
+
+By default, app data is local to the machine.
+
+Folder sync can share tasks, notes, Desk365 hostname, and hidden ticket state between machines. If the configured folder is unavailable, shared-data access pauses instead of silently writing divergent local copies.
+
+Google Cloud Storage sync can be used instead of folder sync. When configured, GCS takes priority over folder sync. Treat the GCS service account key file like a password.
+
+## Project Docs
+
+- `docs/WHERE_WE_STAND.md` tracks current project status and known limitations.
+- `docs/DECISIONS.md` records durable project decisions.
+- `AGENTS.md` contains coding-agent rules for working in this repository.
+
+## License
+
+MIT

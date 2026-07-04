@@ -54,9 +54,9 @@ Working personal-use Tauri desktop app with a revisioned local/shared JSON data 
 - Hidden tickets are visually distinct when "Show hidden" is active (low opacity + grayscale)
 - Auto-compact layout when content overflows the panel; returns to normal when it fits
 - Checked-in version/build workflow through version.json and helper scripts
-- GitHub Actions push-build workflow produces portable Windows EXE and universal macOS DMG
+- GitHub Actions push-build workflow produces a Windows NSIS installer and universal macOS DMG
 - GitHub Release workflow publishes assets whenever version.json changes on main, with commit-based release notes
-- macOS CI builds use ad-hoc signing
+- macOS release builds are wired for Developer ID signing, notarization, and stapling when GitHub secrets are configured
 - Refreshed app icon: light-mode kanban with colored column headers and done indicators
 
 ## What Is Partial
@@ -72,7 +72,7 @@ Working personal-use Tauri desktop app with a revisioned local/shared JSON data 
 
 ## Known Limitations And Trust Warnings
 - Desk365 integration requires a valid Desk365 account, hostname, and API key
-- macOS builds are ad-hoc signed but not notarized; Windows builds are unsigned
+- macOS release builds require Apple Developer signing/notarization secrets; Windows builds are unsigned
 - If a configured sync folder goes offline, shared-data features pause until it is reachable again
 - GCS sync is polling-only; worst-case change visibility is 5 minutes during quiet periods
 - GCS service account key file path is stored in local-settings.json (machine-local, not synced); each machine must configure GCS independently

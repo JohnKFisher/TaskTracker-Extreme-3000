@@ -23,7 +23,7 @@ jobs:
             platform: windows-latest
             rust_targets: x86_64-pc-windows-msvc
             tauri_args: --target x86_64-pc-windows-msvc --bundles nsis
-            upload_plain_binary: true
+            upload_plain_binary: false
 
           - job_name: macos-universal
             platform: macos-14
@@ -79,8 +79,7 @@ jobs:
             echo
             echo "Assets:"
             echo "- Windows NSIS installer (setup EXE)"
-            echo "- Windows portable EXE"
-            echo "- macOS universal DMG"
+            echo "- macOS universal notarized DMG"
             echo "EOF"
           } >> "$GITHUB_OUTPUT"
 
@@ -109,10 +108,58 @@ jobs:
         run: cargo check
         working-directory: src-tauri
 
+      - name: Validate macOS signing secrets
+        if: matrix.platform == 'macos-14'
+        shell: bash
+        env:
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          MACOS_CERTIFICATE_P12_BASE64: ${{ secrets.MACOS_CERTIFICATE_P12_BASE64 }}
+          MACOS_CERTIFICATE_PASSWORD: ${{ secrets.MACOS_CERTIFICATE_PASSWORD }}
+          MACOS_CODESIGN_IDENTITY: ${{ secrets.MACOS_CODESIGN_IDENTITY }}
+          MACOS_KEYCHAIN_PASSWORD: ${{ secrets.MACOS_KEYCHAIN_PASSWORD }}
+        run: |
+          missing=0
+          for name in APPLE_APP_SPECIFIC_PASSWORD APPLE_ID APPLE_TEAM_ID MACOS_CERTIFICATE_P12_BASE64 MACOS_CERTIFICATE_PASSWORD MACOS_CODESIGN_IDENTITY MACOS_KEYCHAIN_PASSWORD; do
+            if [ -z "${!name}" ]; then
+              echo "::error::$name is required for macOS Developer ID signing, notarization, and stapling"
+              missing=1
+            fi
+          done
+          exit "$missing"
+
+      - name: Import Apple Developer ID certificate
+        if: matrix.platform == 'macos-14'
+        shell: bash
+        env:
+          MACOS_CERTIFICATE_P12_BASE64: ${{ secrets.MACOS_CERTIFICATE_P12_BASE64 }}
+          MACOS_CERTIFICATE_PASSWORD: ${{ secrets.MACOS_CERTIFICATE_PASSWORD }}
+          MACOS_KEYCHAIN_PASSWORD: ${{ secrets.MACOS_KEYCHAIN_PASSWORD }}
+        run: |
+          certificate_path="$RUNNER_TEMP/developer-id.p12"
+          keychain_path="$RUNNER_TEMP/app-signing.keychain-db"
+
+          printf '%s' "$MACOS_CERTIFICATE_P12_BASE64" | base64 --decode > "$certificate_path"
+          security create-keychain -p "$MACOS_KEYCHAIN_PASSWORD" "$keychain_path"
+          security set-keychain-settings -lut 21600 "$keychain_path"
+          security unlock-keychain -p "$MACOS_KEYCHAIN_PASSWORD" "$keychain_path"
+          security import "$certificate_path" -P "$MACOS_CERTIFICATE_PASSWORD" -A -t cert -f pkcs12 -k "$keychain_path"
+          security list-keychains -d user -s "$keychain_path"
+          security default-keychain -s "$keychain_path"
+          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$MACOS_KEYCHAIN_PASSWORD" "$keychain_path"
+          security find-identity -v -p codesigning "$keychain_path"
+
       - name: Build and upload release assets
         uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          APPLE_CERTIFICATE: ${{ secrets.MACOS_CERTIFICATE_P12_BASE64 }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.MACOS_CERTIFICATE_PASSWORD }}
+          APPLE_SIGNING_IDENTITY: ${{ secrets.MACOS_CODESIGN_IDENTITY }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
         with:
           tagName: ${{ steps.version.outputs.release_tag }}
           releaseName: TaskTracker Extreme 3000 ${{ steps.version.outputs.release_tag }}
@@ -121,4 +168,4 @@ jobs:
           prerelease: false
           args: ${{ matrix.tauri_args }}
           uploadPlainBinary: ${{ matrix.upload_plain_binary }}
-          assetNamePattern: "[name]-[version]-[platform]-[arch][ext]"
+          assetNamePattern: "TaskTracker Extreme 3000 v[version] - [platform] [arch][ext]"
