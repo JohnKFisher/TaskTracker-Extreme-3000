@@ -602,6 +602,56 @@ function confirmDelete(taskTitle) {
   });
 }
 
+// A simpler cancel/confirm variant of the dialog above, for actions that don't need
+// a three-way choice (used by clearDoneTasks instead of the unreliable window.confirm()).
+function confirmAction(message, confirmLabel) {
+  return new Promise((resolve) => {
+    const overlay = document.createElement('div');
+    overlay.className = 'confirm-overlay';
+
+    const dialog = document.createElement('div');
+    dialog.className = 'confirm-dialog';
+    dialog.setAttribute('role', 'alertdialog');
+    dialog.setAttribute('aria-modal', 'true');
+
+    const msg = document.createElement('p');
+    msg.className = 'confirm-message';
+    msg.textContent = message;
+
+    const actions = document.createElement('div');
+    actions.className = 'confirm-actions';
+
+    const cancelBtn = document.createElement('button');
+    cancelBtn.type = 'button';
+    cancelBtn.textContent = 'Cancel';
+    cancelBtn.className = 'confirm-cancel';
+
+    const confirmBtn = document.createElement('button');
+    confirmBtn.type = 'button';
+    confirmBtn.textContent = confirmLabel;
+    confirmBtn.className = 'confirm-delete';
+
+    function close(result) {
+      overlay.remove();
+      resolve(result);
+    }
+
+    cancelBtn.addEventListener('click', () => close(false));
+    confirmBtn.addEventListener('click', () => close(true));
+    overlay.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape') { e.preventDefault(); close(false); }
+    });
+
+    actions.appendChild(cancelBtn);
+    actions.appendChild(confirmBtn);
+    dialog.appendChild(msg);
+    dialog.appendChild(actions);
+    overlay.appendChild(dialog);
+    document.body.appendChild(overlay);
+    cancelBtn.focus();
+  });
+}
+
 async function deleteTask(id) {
   if (!isTaskStorageWritable()) return;
 
@@ -629,16 +679,18 @@ async function deleteTask(id) {
   renderAllColumns();
 }
 
-function clearDoneTasks(board) {
+async function clearDoneTasks(board) {
   if (!isTaskStorageWritable()) return;
 
   const normalizedBoard = normalizeBoard(board);
   const doneTasks = tasks.filter((task) => task.board === normalizedBoard && task.column === 'done');
   if (!doneTasks.length) return;
 
-  if (!confirm(`Clear ${doneTasks.length} done ${doneTasks.length === 1 ? 'task' : 'tasks'}?`)) {
-    return;
-  }
+  const confirmed = await confirmAction(
+    `Clear ${doneTasks.length} done ${doneTasks.length === 1 ? 'task' : 'tasks'}?`,
+    'Clear',
+  );
+  if (!confirmed) return;
 
   const updatedAt = new Date().toISOString();
   doneTasks.forEach((task) => recordTaskTombstone(task.id, updatedAt));

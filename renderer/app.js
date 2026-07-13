@@ -59,21 +59,41 @@ function updateTabCount(tabName, count) {
 
 window.updateTabCount = updateTabCount;
 
+// Built once so re-renders update text/visibility instead of tearing down and
+// rebuilding child nodes (and so banner text is set via textContent, never
+// innerHTML, since some messages come from external API error text).
+const bannerTextEl = document.createElement('span');
+bannerTextEl.className = 'app-banner-text';
+const bannerDismissBtn = document.createElement('button');
+bannerDismissBtn.type = 'button';
+bannerDismissBtn.className = 'app-banner-dismiss';
+bannerDismissBtn.textContent = '×';
+bannerDismissBtn.setAttribute('aria-label', 'Dismiss notice');
+bannerDismissBtn.addEventListener('click', (event) => {
+  event.stopPropagation();
+  window.clearAppNotice();
+});
+document.getElementById('storage-banner').append(bannerTextEl, bannerDismissBtn);
+
 function renderTopBanner() {
   const banner = document.getElementById('storage-banner');
   banner.classList.remove('info', 'warning', 'danger');
 
   if (window.currentStorageStatus && (window.currentStorageStatus.mode === 'syncUnavailable' || window.currentStorageStatus.mode === 'localUnavailable' || window.currentStorageStatus.mode === 'gcsUnavailable')) {
-    banner.textContent = window.currentStorageStatus.message || 'Shared data is currently unavailable.';
+    bannerTextEl.textContent = window.currentStorageStatus.message || 'Shared data is currently unavailable.';
     banner.classList.add('danger');
     banner.classList.remove('hidden');
+    // Reflects real, still-true system state — dismissing wouldn't fix anything,
+    // so no dismiss control here (unlike app notices, below).
+    bannerDismissBtn.classList.add('hidden');
     return;
   }
 
   if (currentAppNotice && currentAppNotice.message) {
-    banner.textContent = currentAppNotice.message;
+    bannerTextEl.textContent = currentAppNotice.message;
     banner.classList.add(currentAppNotice.tone || 'info');
     banner.classList.remove('hidden');
+    bannerDismissBtn.classList.remove('hidden');
     if (currentAppNotice.onClick) {
       banner.style.cursor = 'pointer';
       banner.onclick = currentAppNotice.onClick;
@@ -84,7 +104,7 @@ function renderTopBanner() {
     return;
   }
 
-  banner.textContent = '';
+  bannerTextEl.textContent = '';
   banner.classList.add('hidden');
   banner.style.cursor = '';
   banner.onclick = null;

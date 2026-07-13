@@ -290,6 +290,9 @@ struct StorageStatus {
     shared_data_available: bool,
     message: Option<String>,
     notice: Option<String>,
+    // "info" or "warning" — lets the frontend tell a successful migration notice
+    // apart from a failed one instead of always rendering it as plain info.
+    notice_tone: Option<String>,
 }
 
 #[derive(Debug, Serialize, Clone)]
@@ -350,6 +353,10 @@ struct AppState {
     // app-close-requested listener; lets CloseRequested force-exit immediately
     // instead of hanging forever if the window is closed before that point.
     renderer_ready: std::sync::atomic::AtomicBool,
+    // Throttles save_window_state so an interactive drag/resize (which can fire
+    // Moved/Resized many times per second) doesn't rewrite window-state.json on
+    // every single event.
+    last_window_state_save: Mutex<Option<std::time::Instant>>,
 }
 
 fn default_true() -> bool {
@@ -595,6 +602,24 @@ struct GcsTokenResponse {
     access_token: String,
 }
 
+// GCS bucket names are interpolated directly into request URLs (see gcs_get_text/
+// gcs_put_text); reject anything that isn't a plausible bucket name up front so a
+// stray space, slash, or other unusual character fails clearly here instead of
+// producing a broken/confusing HTTP request later.
+fn is_valid_gcs_bucket_name(value: &str) -> bool {
+    let len = value.len();
+    if !(3..=222).contains(&len) {
+        return false;
+    }
+    let first_ok = value.chars().next().is_some_and(|c| c.is_ascii_alphanumeric());
+    let last_ok = value.chars().last().is_some_and(|c| c.is_ascii_alphanumeric());
+    first_ok
+        && last_ok
+        && value
+            .chars()
+            .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-' || c == '_' || c == '.')
+}
+
 fn try_create_gcs_client(settings: &LocalSettings) -> Option<GcsClient> {
     let credential_path = settings
         .gcs_credential_path
@@ -603,7 +628,8 @@ fn try_create_gcs_client(settings: &LocalSettings) -> Option<GcsClient> {
     let bucket = settings
         .gcs_bucket
         .as_deref()
-        .filter(|s| !s.trim().is_empty())?;
+        .filter(|s| !s.trim().is_empty())
+        .filter(|s| is_valid_gcs_bucket_name(s))?;
     let content = fs::read_to_string(credential_path).ok()?;
     let key: ServiceAccountKey = serde_json::from_str(&content).ok()?;
     Some(GcsClient {
@@ -817,6 +843,7 @@ fn compute_storage_status_from_local_dir(
                     shared_data_available: true,
                     message: None,
                     notice: None,
+                    notice_tone: None,
                 }
             } else {
                 StorageStatus {
@@ -829,6 +856,7 @@ fn compute_storage_status_from_local_dir(
                         path.display()
                     )),
                     notice: None,
+                    notice_tone: None,
                 }
             }
         }
@@ -840,6 +868,7 @@ fn compute_storage_status_from_local_dir(
                 shared_data_available: true,
                 message: None,
                 notice: None,
+                notice_tone: None,
             },
             Err(err) => StorageStatus {
                 mode: "localUnavailable".to_string(),
@@ -848,6 +877,7 @@ fn compute_storage_status_from_local_dir(
                 shared_data_available: false,
                 message: Some(err.message),
                 notice: None,
+                notice_tone: None,
             },
         },
     }
@@ -865,6 +895,7 @@ fn compute_storage_status(settings: &LocalSettings, app: &AppHandle) -> StorageS
                 shared_data_available: true,
                 message: None,
                 notice: None,
+                notice_tone: None,
             };
         }
         return StorageStatus {
@@ -876,6 +907,7 @@ fn compute_storage_status(settings: &LocalSettings, app: &AppHandle) -> StorageS
                 "Could not connect to the configured GCS bucket. Check that the credential file still exists and is a valid service account key.".to_string(),
             ),
             notice: None,
+            notice_tone: None,
         };
     }
     compute_storage_status_from_local_dir(local_app_data_dir(app), settings)
@@ -2852,10 +2884,10 @@ fn save_local_settings_cmd(
 
     *state.local_settings.lock().unwrap() = normalized_settings.clone();
 
-    let migration_notice =
+    let (migration_notice, migration_notice_tone) =
         match migrate_shared_data_if_needed(&previous_settings, &normalized_settings, &app) {
-            Ok(notice) => notice,
-            Err(err) => Some(err.message),
+            Ok(notice) => (notice, "info".to_string()),
+            Err(err) => (Some(err.message), "warning".to_string()),
         };
 
     let migration_result =
@@ -2871,7 +2903,8 @@ fn save_local_settings_cmd(
     let _ = sync_shared_data_watcher(&app);
 
     let mut status = compute_storage_status(&normalized_settings, &app);
-    status.notice = migration_notice;
+    status.notice = migration_notice.clone();
+    status.notice_tone = migration_notice.map(|_| migration_notice_tone);
     CommandResponse::ok(status)
 }
 
@@ -2903,7 +2936,17 @@ struct UpdateCheckResult {
 }
 
 fn semver_tuple(v: &str) -> (u32, u32, u32) {
-    let parts: Vec<u32> = v.split('.').filter_map(|p| p.parse().ok()).collect();
+    // Use .map (not .filter_map) so a non-numeric segment becomes 0 instead of being
+    // dropped and shifting every later segment — e.g. "2.9.0-beta" must read as
+    // (2, 9, 0), not (2, 9, <missing>) collapsing to (2, 9, 0) only by accident, and
+    // "2.9-rc1" must not silently become (2, 0, 0) by losing its minor version.
+    let parts: Vec<u32> = v
+        .split('.')
+        .map(|segment| {
+            let digits: String = segment.chars().take_while(|c| c.is_ascii_digit()).collect();
+            digits.parse().unwrap_or(0)
+        })
+        .collect();
     (
         parts.get(0).copied().unwrap_or(0),
         parts.get(1).copied().unwrap_or(0),
@@ -2954,14 +2997,6 @@ async fn check_for_update() -> CommandResponse<UpdateCheckResult> {
 #[tauri::command]
 fn window_minimize(window: tauri::WebviewWindow) -> CommandResponse<()> {
     match window.minimize() {
-        Ok(_) => CommandResponse::ok(()),
-        Err(err) => CommandResponse::err("window_error", err.to_string()),
-    }
-}
-
-#[tauri::command]
-fn hide_window(window: tauri::WebviewWindow) -> CommandResponse<()> {
-    match window.hide() {
         Ok(_) => CommandResponse::ok(()),
         Err(err) => CommandResponse::err("window_error", err.to_string()),
     }
@@ -3497,6 +3532,7 @@ fn main() {
                 shared_data_watcher: Mutex::new(None),
                 gcs_client: Mutex::new(gcs_client),
                 renderer_ready: std::sync::atomic::AtomicBool::new(false),
+                last_window_state_save: Mutex::new(None),
             });
 
             setup_tray(app)?;
@@ -3539,8 +3575,21 @@ fn main() {
             }
             tauri::WindowEvent::Moved(_) | tauri::WindowEvent::Resized(_) => {
                 if window.label() == "main" {
-                    if let Some(main_window) = window.app_handle().get_webview_window("main") {
-                        save_window_state(&main_window);
+                    // Throttled: an interactive drag/resize can fire this many times
+                    // per second, and each save is a full temp-file-write-and-rename.
+                    // Quit-time saves bypass this by calling save_window_state directly.
+                    let state = window.app_handle().state::<AppState>();
+                    let mut last_save = state.last_window_state_save.lock().unwrap();
+                    let should_save = last_save
+                        .map(|t| t.elapsed() >= Duration::from_millis(500))
+                        .unwrap_or(true);
+                    if should_save {
+                        *last_save = Some(std::time::Instant::now());
+                        drop(last_save);
+                        if let Some(main_window) = window.app_handle().get_webview_window("main")
+                        {
+                            save_window_state(&main_window);
+                        }
                     }
                 }
             }
@@ -3563,7 +3612,6 @@ fn main() {
             get_app_metadata,
             check_for_update,
             window_minimize,
-            hide_window,
             mark_renderer_ready,
             quit_app,
             toggle_always_on_top,
@@ -3585,13 +3633,14 @@ fn main() {
 mod tests {
     use super::{
         compare_timestamps, compute_storage_status_from_local_dir, copy_shared_data_from_source,
-        default_task_board, generate_device_id, hidden_ticket_schema_version, is_valid_hostname,
-        merge_hidden_tickets_documents, merge_missing_sync_folder, merge_task_documents,
-        migrate_legacy_secret_value, normalize_hidden_tickets_document, normalize_local_settings,
-        normalize_path_value, normalize_task_document, normalize_task_orders,
+        default_task_board, generate_device_id, hidden_ticket_schema_version, is_valid_gcs_bucket_name,
+        is_valid_hostname, merge_hidden_tickets_documents, merge_missing_sync_folder,
+        merge_task_documents, migrate_legacy_secret_value, normalize_hidden_tickets_document,
+        normalize_local_settings, normalize_path_value, normalize_task_document, normalize_task_orders,
         normalize_ticket_timestamp, parse_hidden_tickets_document_content,
-        parse_task_document_content, parse_task_item_value, AppError, CredentialStore,
-        HiddenTicketState, HiddenTicketsDocument, LocalSettings, TaskDocument, TaskItem,
+        parse_task_document_content, parse_task_item_value, semver_tuple, AppError,
+        CredentialStore, HiddenTicketState, HiddenTicketsDocument, LocalSettings, TaskDocument,
+        TaskItem,
         TaskTombstone,
     };
     use serde_json::json;
@@ -3713,6 +3762,34 @@ mod tests {
         assert!(!is_valid_hostname("example.desk365.io/path"));
         assert!(!is_valid_hostname("example desk365 io"));
         assert!(!is_valid_hostname("-bad.example"));
+    }
+
+    #[test]
+    fn validates_gcs_bucket_names() {
+        assert!(is_valid_gcs_bucket_name("johnkfisher-tasktracker-extreme"));
+        assert!(is_valid_gcs_bucket_name("my.bucket.name"));
+        assert!(is_valid_gcs_bucket_name("bucket_with_underscores"));
+        assert!(!is_valid_gcs_bucket_name("has a space"));
+        assert!(!is_valid_gcs_bucket_name("has/a/slash"));
+        assert!(!is_valid_gcs_bucket_name("Has-Uppercase"));
+        assert!(!is_valid_gcs_bucket_name("-starts-with-dash"));
+        assert!(!is_valid_gcs_bucket_name("ends-with-dash-"));
+        assert!(!is_valid_gcs_bucket_name("ab")); // too short
+        assert!(!is_valid_gcs_bucket_name(""));
+    }
+
+    #[test]
+    fn semver_tuple_handles_prerelease_suffixes() {
+        assert_eq!(semver_tuple("2.8.0"), (2, 8, 0));
+        // A non-numeric suffix on the patch segment must not vanish and shift
+        // nothing (both sides should read as (2, 9, 0), not fall back to a
+        // dropped/misaligned tuple).
+        assert_eq!(semver_tuple("2.9.0-beta"), (2, 9, 0));
+        assert_eq!(semver_tuple("2.9.0"), (2, 9, 0));
+        assert!(semver_tuple("2.9.0-beta") > semver_tuple("2.8.0"));
+        // A missing patch segment must default to 0, not disappear along with the
+        // rest of the tuple.
+        assert_eq!(semver_tuple("2.9-rc1"), (2, 9, 0));
     }
 
     #[test]

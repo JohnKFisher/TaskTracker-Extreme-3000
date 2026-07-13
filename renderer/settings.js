@@ -178,9 +178,10 @@ function renderAbout(metadata) {
 async function applyStorageStatusResult(status) {
   await refreshLocalSettingsDisplay();
   renderStorageStatus(status);
-  renderSyncFolderNotice(status.notice || null, status.notice ? 'info' : 'info');
+  const noticeTone = status.noticeTone || 'info';
+  renderSyncFolderNotice(status.notice || null, noticeTone);
   if (status.notice) {
-    window.showAppNotice(status.notice, 'info', 9000);
+    window.showAppNotice(status.notice, noticeTone, 9000);
   }
   await window.refreshStorageStatus();
 }
