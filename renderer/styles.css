@@ -828,6 +828,16 @@ body.kanban-dragging .task-list {
   background-color: color-mix(in srgb, var(--bg-card-hover) 90%, #16a34a 10%);
 }
 
+@keyframes ticket-highlight-pulse {
+  0%, 100% { box-shadow: 0 0 0 0 var(--accent-soft); }
+  50% { box-shadow: 0 0 0 6px var(--accent-soft); }
+}
+
+.ticket-card.ticket-highlight {
+  animation: ticket-highlight-pulse 0.8s ease-in-out 2;
+  border-color: var(--accent);
+}
+
 .ticket-info {
   border: none;
   background: transparent;

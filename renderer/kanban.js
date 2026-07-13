@@ -215,6 +215,25 @@ function recordTaskTombstone(taskId, updatedAt) {
   taskDocumentState.tombstones = filtered;
 }
 
+function removeTaskTombstone(taskId) {
+  const tombstones = Array.isArray(taskDocumentState.tombstones) ? taskDocumentState.tombstones : [];
+  taskDocumentState.tombstones = tombstones.filter((entry) => entry.id !== taskId);
+}
+
+// Restores task(s) removed by deleteTask/clearDoneTasks, for the "click to undo"
+// notice. A fresh updatedAt (newer than the tombstone recorded at delete time)
+// ensures the restored task wins if this has already round-tripped through a save.
+function restoreDeletedTasks(deletedTasks) {
+  const now = new Date().toISOString();
+  deletedTasks.forEach((task) => {
+    removeTaskTombstone(task.id);
+    tasks.push({ ...task, updatedAt: now });
+  });
+  markTasksDirty();
+  saveTasks();
+  renderAllColumns();
+}
+
 async function loadTasks(options = {}) {
   const { silent = false } = options;
 
@@ -677,6 +696,10 @@ async function deleteTask(id) {
   markTasksDirty();
   saveTasks();
   renderAllColumns();
+
+  window.showAppNotice(`Deleted "${task.title}" — click to undo`, 'info', 8000, () => {
+    restoreDeletedTasks([task]);
+  });
 }
 
 async function clearDoneTasks(board) {
@@ -698,6 +721,11 @@ async function clearDoneTasks(board) {
   markTasksDirty();
   saveTasks();
   renderAllColumns();
+
+  const count = doneTasks.length;
+  window.showAppNotice(`Cleared ${count} done ${count === 1 ? 'task' : 'tasks'} — click to undo`, 'info', 8000, () => {
+    restoreDeletedTasks(doneTasks);
+  });
 }
 
 function handleAddTask(board) {
@@ -743,6 +771,14 @@ function purgeStaleDoneTasks() {
   markTasksDirty();
   saveTasks();
   renderAllColumns();
+
+  const count = stale.length;
+  window.showAppNotice(
+    `Auto-cleared ${count} done ${count === 1 ? 'task' : 'tasks'} (8+ days old) — click to undo`,
+    'info',
+    12000,
+    () => restoreDeletedTasks(stale),
+  );
 }
 
 setInterval(purgeStaleDoneTasks, 60 * 60 * 1000); // check once per hour

@@ -422,6 +422,18 @@ listen('navigate-to-tab', (event) => {
   setActiveTab(payload.tab || 'settings', payload.section);
 });
 
+// Best available proxy for "the user clicked a new-ticket notification": the
+// notification plugin this app uses has no click callback on desktop, but the app
+// window reliably regains focus whenever the user brings it back (tray click, global
+// shortcut, or the OS activating us after a notification click). See tickets.js.
+currentWindow.onFocusChanged(({ payload: focused }) => {
+  if (focused && typeof window.jumpToPendingTicketNotification === 'function') {
+    window.jumpToPendingTicketNotification();
+  }
+}).catch((error) => {
+  console.error('Failed to listen for window focus changes:', error);
+});
+
 listen('app-close-requested', async () => {
   try {
     if (!await confirmQuit()) return;

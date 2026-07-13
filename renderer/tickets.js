@@ -13,6 +13,11 @@ let hiddenTicketDocument = {
 };
 let currentTickets = [];
 let seenTicketNumbers = new Set();
+// Ticket numbers from the most recent "new ticket" notification, consumed the next
+// time the app window regains focus (see jumpToPendingTicketNotification in app.js's
+// onFocusChanged listener) to jump straight to them instead of leaving the user to
+// go find the tickets tab themselves.
+let pendingNotificationTicketNumbers = [];
 let pollTimer = null;
 let hiddenTicketSaveInFlight = false;
 let ticketFetchInFlight = null;
@@ -198,6 +203,31 @@ function renderTickets() {
   window.syncCompact(ticketsList);
 }
 
+// The OS-native notification plugin this app uses has no on-click callback on
+// desktop, so a click can't tell us "open ticket #X" directly. The best available
+// proxy: whenever the app window next regains focus (tray click, global shortcut,
+// or the OS bringing us forward after the user clicks the notification itself),
+// jump to the Tickets tab and highlight whichever ticket(s) triggered the last
+// notification. Called from app.js's onFocusChanged listener.
+window.jumpToPendingTicketNotification = function jumpToPendingTicketNotification() {
+  if (!pendingNotificationTicketNumbers.length) return;
+  const targetNumbers = pendingNotificationTicketNumbers.map(String);
+  pendingNotificationTicketNumbers = [];
+
+  window.setActiveTab('tickets');
+
+  setTimeout(() => {
+    const card = Array.from(ticketsList.querySelectorAll('.ticket-card')).find((entry) => {
+      const numberEl = entry.querySelector('.ticket-number');
+      return numberEl && targetNumbers.includes(numberEl.textContent.replace(/^#/, ''));
+    });
+    if (!card) return;
+    card.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    card.classList.add('ticket-highlight');
+    setTimeout(() => card.classList.remove('ticket-highlight'), 2500);
+  }, 50);
+};
+
 async function toggleHideTicket(ticketNumber) {
   if (!(window.currentStorageStatus && window.currentStorageStatus.sharedDataAvailable)) return;
   // The whole hidden-tickets document is saved as one unit, so a save already in
@@ -259,6 +289,7 @@ async function runTicketFetch() {
         const summary = brandNew.length === 1
           ? `#${brandNew[0].TicketNumber}: ${brandNew[0].Subject}`
           : `${brandNew.length} new tickets`;
+        pendingNotificationTicketNumbers = brandNew.map((ticket) => ticket.TicketNumber);
         await window.callCommand('show_notification', {
           title: 'New Desk365 Tickets',
           body: summary,
