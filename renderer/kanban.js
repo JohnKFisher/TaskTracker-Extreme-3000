@@ -695,6 +695,24 @@ function purgeStaleDoneTasks() {
 
 setInterval(purgeStaleDoneTasks, 60 * 60 * 1000); // check once per hour
 
+// The stale/recent tint on a card is only computed when its DOM node is (re)created,
+// so a board left untouched for a while can show a stale tint that hasn't kicked in
+// yet, or a "recent" tint that's overstayed its 2-hour window. Update the existing
+// nodes in place instead of a full re-render, so this can't disrupt an expanded card,
+// a hovered tooltip, or drag-in-progress state.
+function refreshTaskFreshnessIndicators() {
+  document.querySelectorAll('.task-card').forEach((card) => {
+    const liveTask = tasks.find((entry) => entry.id === card.dataset.id);
+    if (!liveTask) return;
+    if (businessDaysSince(liveTask.createdAt) >= 7) card.dataset.stale = 'true';
+    else delete card.dataset.stale;
+    if (hoursSince(liveTask.createdAt) < 2) card.dataset.recent = 'true';
+    else delete card.dataset.recent;
+  });
+}
+
+setInterval(refreshTaskFreshnessIndicators, 5 * 60 * 1000); // every 5 minutes
+
 // Expose current tasks for the archive feature.
 window.getCurrentTasksForArchive = function getCurrentTasksForArchive() {
   return tasks.slice();

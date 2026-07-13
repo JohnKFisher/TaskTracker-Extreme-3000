@@ -346,6 +346,10 @@ struct AppState {
     ticket_auth_error: Mutex<Option<String>>,
     shared_data_watcher: Mutex<Option<SharedDataWatcher>>,
     gcs_client: Mutex<Option<Arc<GcsClient>>>,
+    // Set once the renderer has loaded far enough to register its
+    // app-close-requested listener; lets CloseRequested force-exit immediately
+    // instead of hanging forever if the window is closed before that point.
+    renderer_ready: std::sync::atomic::AtomicBool,
 }
 
 fn default_true() -> bool {
@@ -1123,6 +1127,14 @@ fn normalize_task_document(mut document: TaskDocument) -> TaskDocument {
         }
         if task.updated_at.as_deref().unwrap_or("").is_empty() {
             task.updated_at = Some(default_task_timestamp(task, &fallback));
+        }
+        // A task already in "done" with no movedToDoneAt (legacy/imported data, or a
+        // hand-edited document) would otherwise be permanently exempt from the
+        // 8-day auto-purge, since that purge only ever looks at movedToDoneAt.
+        // Back-fill it from updated_at as the closest available proxy for when it
+        // was last touched, so it still ages out on the normal schedule.
+        if task.column == "done" && task.moved_to_done_at.as_deref().unwrap_or("").is_empty() {
+            task.moved_to_done_at = task.updated_at.clone();
         }
     }
 
@@ -1988,11 +2000,12 @@ fn merge_task_documents(
 
         let chosen_task = match (latest_task, incoming_task) {
             (Some(left), Some(right)) => {
-                if revisions_differ
-                    && left != right
-                    && compare_timestamps(left.updated_at.as_deref(), right.updated_at.as_deref())
-                        != Ordering::Equal
-                {
+                // Flag this as a merge conflict whenever the two sides genuinely
+                // disagree, including an exact timestamp tie — a tie is the one case
+                // choose_latest_task can't order by recency at all (it just picks
+                // `right` arbitrarily), so it's the case a silent pick is least safe,
+                // not a reason to skip the notice.
+                if revisions_differ && left != right {
                     conflict_ids.push(id.clone());
                 }
                 Some(choose_latest_task(left, right))
@@ -2333,6 +2346,25 @@ fn format_iso_timestamp(unix_secs: u64) -> String {
     let yr = if mo <= 2 { y + 1 } else { y };
 
     format!("{yr:04}-{mo:02}-{d:02}T{h:02}:{m:02}:{s:02}.000Z")
+}
+
+// Desk365 timestamp fields are usually ISO strings already, but some deployments
+// return a raw Unix epoch number instead. `new Date(...)` on the frontend expects
+// either an ISO string or a millisecond-epoch number — a bare numeric string (what
+// naive `Value::Number -> Value::String` coercion would produce) parses as neither,
+// so convert any numeric epoch into a proper ISO string instead, detecting
+// seconds-vs-milliseconds by magnitude.
+fn normalize_ticket_timestamp(value: Value) -> Value {
+    match value {
+        Value::Number(n) => match n.as_u64() {
+            Some(raw) => {
+                let secs = if raw > 1_000_000_000_000 { raw / 1000 } else { raw };
+                Value::String(format_iso_timestamp(secs))
+            }
+            None => Value::Number(n),
+        },
+        other => other,
+    }
 }
 
 fn emit_shared_data_change(app: &AppHandle, files: Vec<String>) {
@@ -2936,6 +2968,14 @@ fn hide_window(window: tauri::WebviewWindow) -> CommandResponse<()> {
 }
 
 #[tauri::command]
+fn mark_renderer_ready(state: State<AppState>) -> CommandResponse<()> {
+    state
+        .renderer_ready
+        .store(true, std::sync::atomic::Ordering::SeqCst);
+    CommandResponse::ok(())
+}
+
+#[tauri::command]
 fn quit_app(app: AppHandle) -> CommandResponse<()> {
     if let Some(window) = app.get_webview_window("main") {
         save_window_state(&window);
@@ -3038,7 +3078,7 @@ async fn fetch_tickets(
         if !response.status().is_success() {
             let status = response.status().as_u16();
             let body = response.text().await.unwrap_or_default();
-            let snippet = &body[..body.len().min(200)];
+            let snippet: String = body.chars().take(200).collect();
             return Ok(CommandResponse::err(
                 "desk365_error",
                 format!("Desk365 API error: {status} — {snippet}"),
@@ -3060,11 +3100,15 @@ async fn fetch_tickets(
         let count = tickets.len();
         all_tickets.extend(tickets);
 
-        if count < 30 || all_tickets.len() >= 300 {
+        // Don't assume a page size (Desk365's actual default isn't pinned down by an
+        // explicit `limit` param here): stop only on a genuinely empty page, and
+        // advance the offset by however many tickets this page actually returned,
+        // so this stays correct regardless of what that default page size is.
+        if count == 0 || all_tickets.len() >= 300 {
             break;
         }
 
-        offset += 30;
+        offset += count;
         tokio::time::sleep(Duration::from_millis(600)).await;
     }
 
@@ -3079,6 +3123,11 @@ async fn fetch_tickets(
             };
 
             json!({
+                // "id" is only a last-resort fallback (used last in this list) for
+                // tenants whose API response doesn't expose a dedicated ticket-number
+                // field; this display value also builds the Desk365 deep link
+                // (tickets.js), so a tenant where "id" is an unrelated internal key
+                // would show/link the wrong identifier here with no way to detect it.
                 "TicketNumber": match get_field(&["TicketNumber", "ticket_number", "ticketNumber", "id"]) {
                     Value::Number(n) => Value::String(n.to_string()),
                     v => v,
@@ -3089,8 +3138,8 @@ async fn fetch_tickets(
                 "Priority": get_field(&["Priority", "priority"]),
                 "Agent": get_field(&["Agent", "agent", "assigned_to", "assignee"]),
                 "Category": get_field(&["Category", "category"]),
-                "CreatedAt": get_field(&["CreatedAt", "created_time", "created_at"]),
-                "UpdatedAt": get_field(&["UpdatedAt", "updated_time", "updated_at"]),
+                "CreatedAt": normalize_ticket_timestamp(get_field(&["CreatedAt", "created_time", "created_at"])),
+                "UpdatedAt": normalize_ticket_timestamp(get_field(&["UpdatedAt", "updated_time", "updated_at"])),
             })
         })
         .filter(|ticket| {
@@ -3447,6 +3496,7 @@ fn main() {
                 ticket_auth_error: Mutex::new(ticket_auth_error),
                 shared_data_watcher: Mutex::new(None),
                 gcs_client: Mutex::new(gcs_client),
+                renderer_ready: std::sync::atomic::AtomicBool::new(false),
             });
 
             setup_tray(app)?;
@@ -3469,7 +3519,15 @@ fn main() {
             tauri::WindowEvent::CloseRequested { api, .. } => {
                 if window.label() == "main" {
                     api.prevent_close();
-                    if window.emit("app-close-requested", ()).is_err() {
+                    let renderer_ready = window
+                        .app_handle()
+                        .state::<AppState>()
+                        .renderer_ready
+                        .load(std::sync::atomic::Ordering::SeqCst);
+                    // If the renderer never got far enough to register its
+                    // app-close-requested listener, emitting would succeed but nothing
+                    // would ever answer it — closing the window would hang forever.
+                    if !renderer_ready || window.emit("app-close-requested", ()).is_err() {
                         if let Some(main_window) =
                             window.app_handle().get_webview_window("main")
                         {
@@ -3506,6 +3564,7 @@ fn main() {
             check_for_update,
             window_minimize,
             hide_window,
+            mark_renderer_ready,
             quit_app,
             toggle_always_on_top,
             open_external_url,
@@ -3530,9 +3589,10 @@ mod tests {
         merge_hidden_tickets_documents, merge_missing_sync_folder, merge_task_documents,
         migrate_legacy_secret_value, normalize_hidden_tickets_document, normalize_local_settings,
         normalize_path_value, normalize_task_document, normalize_task_orders,
-        parse_hidden_tickets_document_content, parse_task_document_content, parse_task_item_value,
-        AppError, CredentialStore, HiddenTicketState, HiddenTicketsDocument, LocalSettings,
-        TaskDocument, TaskItem, TaskTombstone,
+        normalize_ticket_timestamp, parse_hidden_tickets_document_content,
+        parse_task_document_content, parse_task_item_value, AppError, CredentialStore,
+        HiddenTicketState, HiddenTicketsDocument, LocalSettings, TaskDocument, TaskItem,
+        TaskTombstone,
     };
     use serde_json::json;
     use std::cmp::Ordering;
@@ -3656,6 +3716,28 @@ mod tests {
     }
 
     #[test]
+    fn normalizes_ticket_timestamp_variants() {
+        // Already an ISO string: passed through untouched.
+        assert_eq!(
+            normalize_ticket_timestamp(json!("2026-04-15T10:30:00.000Z")),
+            json!("2026-04-15T10:30:00.000Z")
+        );
+        // Missing/null: passed through untouched.
+        assert_eq!(normalize_ticket_timestamp(json!(null)), json!(null));
+        // Unix epoch seconds (10-digit, e.g. 2026-01-01T00:00:00Z = 1767225600).
+        assert_eq!(
+            normalize_ticket_timestamp(json!(1_767_225_600u64)),
+            json!("2026-01-01T00:00:00.000Z")
+        );
+        // Unix epoch milliseconds (13-digit) for the same instant must resolve to the
+        // same ISO string as the seconds form above, not 1000x the wrong date.
+        assert_eq!(
+            normalize_ticket_timestamp(json!(1_767_225_600_000u64)),
+            json!("2026-01-01T00:00:00.000Z")
+        );
+    }
+
+    #[test]
     fn normalizes_local_settings_with_device_id() {
         let normalized = normalize_local_settings(LocalSettings {
             sync_folder: Some("   ".to_string()),
@@ -3710,6 +3792,26 @@ mod tests {
         .unwrap();
 
         assert_eq!(parsed.board, "work");
+    }
+
+    #[test]
+    fn backfills_moved_to_done_at_for_legacy_done_tasks() {
+        let legacy_done_task = TaskItem {
+            column: "done".to_string(),
+            moved_to_done_at: None,
+            ..task("done-1", "Legacy done task", "2026-01-01T00:00:00.000Z")
+        };
+        let document = normalize_task_document(TaskDocument {
+            tasks: vec![legacy_done_task],
+            ..TaskDocument::default()
+        });
+
+        assert_eq!(
+            document.tasks[0].moved_to_done_at.as_deref(),
+            Some("2026-01-01T00:00:00.000Z"),
+            "a done task with no movedToDoneAt should be back-filled from updated_at \
+             so it isn't permanently exempt from the 8-day auto-purge"
+        );
     }
 
     #[test]
@@ -3833,6 +3935,34 @@ mod tests {
         let (merged, conflicts) = merge_task_documents(&latest, &incoming, "device-a");
         assert!(conflicts.is_empty());
         assert_eq!(merged.tasks[0].title, "Dragged locally");
+    }
+
+    #[test]
+    fn exact_timestamp_tie_with_differing_content_flags_conflict() {
+        // Two devices independently edit the same task and, by coincidence (or a
+        // shared clock source), end up with identical updated_at values but
+        // different titles. choose_latest_task can't order these by recency, so
+        // whichever one "wins" is arbitrary — that makes this the case a conflict
+        // notice matters most, not one to silently skip.
+        let latest = normalize_task_document(TaskDocument {
+            revision: 5,
+            updated_at: Some("2026-04-13T10:00:00.000Z".to_string()),
+            updated_by: Some("device-a".to_string()),
+            tasks: vec![task("1", "From device A", "2026-04-13T10:00:00.000Z")],
+            tombstones: vec![],
+            ..TaskDocument::default()
+        });
+        let incoming = normalize_task_document(TaskDocument {
+            revision: 6,
+            updated_at: Some("2026-04-13T10:00:00.000Z".to_string()),
+            updated_by: Some("device-b".to_string()),
+            tasks: vec![task("1", "From device B", "2026-04-13T10:00:00.000Z")],
+            tombstones: vec![],
+            ..TaskDocument::default()
+        });
+
+        let (_, conflicts) = merge_task_documents(&latest, &incoming, "device-c");
+        assert_eq!(conflicts, vec!["1".to_string()]);
     }
 
     #[test]

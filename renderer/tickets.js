@@ -44,6 +44,27 @@ function startPolling() {
   pollTimer = setInterval(fetchAndRenderTickets, POLL_INTERVAL);
 }
 
+// The stale/recent tint on a ticket card is only computed when its DOM node is
+// (re)created, which normally happens after each poll — but a failed/skipped fetch
+// (Desk365 down, rate-limited, briefly unconfigured) shouldn't also leave a "recent"
+// tint stuck well past its 2-hour window. Update existing nodes in place (no network
+// call, no full rebuild) instead of forcing a renderTickets() on a timer.
+function refreshTicketFreshnessIndicators() {
+  document.querySelectorAll('.ticket-card').forEach((card) => {
+    const numberEl = card.querySelector('.ticket-number');
+    if (!numberEl) return;
+    const ticketNumber = numberEl.textContent.replace(/^#/, '');
+    const ticket = currentTickets.find((entry) => String(entry.TicketNumber) === ticketNumber);
+    if (!ticket) return;
+    if (window.businessDaysSince(ticket.UpdatedAt) >= 5) card.dataset.stale = 'true';
+    else delete card.dataset.stale;
+    if (window.hoursSince(ticket.CreatedAt) < 2) card.dataset.recent = 'true';
+    else delete card.dataset.recent;
+  });
+}
+
+setInterval(refreshTicketFreshnessIndicators, 5 * 60 * 1000);
+
 function hiddenTicketNumbers() {
   return new Set(
     (hiddenTicketDocument.states || [])
@@ -147,7 +168,7 @@ function renderTickets() {
       meta.appendChild(priority);
     }
 
-    if (ticket.Agent) {
+    if (typeof ticket.Agent === 'string' && ticket.Agent) {
       const agent = document.createElement('span');
       agent.textContent = ticket.Agent.split('@')[0];
       meta.appendChild(agent);
@@ -163,9 +184,10 @@ function renderTickets() {
     hideBtn.textContent = isHidden ? '👁' : '🚫';
     hideBtn.title = isHidden ? 'Unhide ticket' : 'Hide ticket';
     hideBtn.setAttribute('aria-label', `${isHidden ? 'Unhide' : 'Hide'} ticket ${ticket.TicketNumber}`);
-    hideBtn.disabled = !(window.currentStorageStatus && window.currentStorageStatus.sharedDataAvailable);
+    hideBtn.disabled = !(window.currentStorageStatus && window.currentStorageStatus.sharedDataAvailable) || hiddenTicketSaveInFlight;
     hideBtn.addEventListener('click', (event) => {
       event.stopPropagation();
+      hideBtn.disabled = true;
       toggleHideTicket(ticket.TicketNumber);
     });
 
@@ -178,6 +200,10 @@ function renderTickets() {
 
 async function toggleHideTicket(ticketNumber) {
   if (!(window.currentStorageStatus && window.currentStorageStatus.sharedDataAvailable)) return;
+  // The whole hidden-tickets document is saved as one unit, so a save already in
+  // flight covers any click that lands before it resolves — avoid a redundant
+  // duplicate save_hidden_tickets call racing the same read-modify-write.
+  if (hiddenTicketSaveInFlight) return;
 
   const existing = Array.isArray(hiddenTicketDocument.states) ? [...hiddenTicketDocument.states] : [];
   const updatedAt = new Date().toISOString();
@@ -381,7 +407,14 @@ changeApiKeyBtn.addEventListener('click', async () => {
 });
 
 refreshBtn.addEventListener('click', () => fetchAndRenderTickets({ force: true }));
-showHiddenCheckbox.addEventListener('change', renderTickets);
+showHiddenCheckbox.addEventListener('change', () => {
+  try {
+    renderTickets();
+  } catch (error) {
+    console.error('Failed to render tickets:', error);
+    ticketsStatus.textContent = error.message || 'Could not render the tickets list.';
+  }
+});
 
 window.addEventListener('storage-status-changed', async () => {
   await initializeTickets();

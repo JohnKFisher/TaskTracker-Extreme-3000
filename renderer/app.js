@@ -90,19 +90,34 @@ function renderTopBanner() {
   banner.onclick = null;
 }
 
-window.showAppNotice = function showAppNotice(message, tone = 'info', timeoutMs = 7000, onClick = null) {
-  currentAppNotice = { message, tone, onClick };
-  if (noticeTimer) clearTimeout(noticeTimer);
-  if (timeoutMs > 0) {
-    noticeTimer = setTimeout(() => {
-      currentAppNotice = null;
-      renderTopBanner();
-    }, timeoutMs);
+// Notices queue instead of clobbering: several independent startup checks
+// (storage status, app metadata, update check, task/note loads) can each want to
+// show a notice around the same time, and a single overwritten slot means only
+// whichever called last is ever seen.
+let noticeQueue = [];
+
+function showNextQueuedNotice() {
+  if (noticeQueue.length === 0) {
+    currentAppNotice = null;
+    renderTopBanner();
+    return;
   }
+  const next = noticeQueue.shift();
+  currentAppNotice = { message: next.message, tone: next.tone, onClick: next.onClick };
+  if (noticeTimer) clearTimeout(noticeTimer);
+  noticeTimer = next.timeoutMs > 0 ? setTimeout(showNextQueuedNotice, next.timeoutMs) : null;
   renderTopBanner();
+}
+
+window.showAppNotice = function showAppNotice(message, tone = 'info', timeoutMs = 7000, onClick = null) {
+  noticeQueue.push({ message, tone, timeoutMs, onClick });
+  if (!currentAppNotice) {
+    showNextQueuedNotice();
+  }
 };
 
 window.clearAppNotice = function clearAppNotice() {
+  noticeQueue = [];
   currentAppNotice = null;
   if (noticeTimer) clearTimeout(noticeTimer);
   noticeTimer = null;
@@ -267,7 +282,13 @@ if (!isIOS) {
   });
 }
 
+let quitDialogOpen = false;
+
 function confirmQuit() {
+  // Both the close button and the native close-request event can call this; without
+  // a guard, two overlapping quit attempts would stack two confirm overlays.
+  if (quitDialogOpen) return Promise.resolve(false);
+  quitDialogOpen = true;
   return new Promise((resolve) => {
     const overlay = document.createElement('div');
     overlay.className = 'confirm-overlay';
@@ -295,7 +316,7 @@ function confirmQuit() {
     overlay.appendChild(dialog);
     document.body.appendChild(overlay);
 
-    function close(result) { overlay.remove(); resolve(result); }
+    function close(result) { overlay.remove(); quitDialogOpen = false; resolve(result); }
     cancelBtn.addEventListener('click', () => close(false));
     quitBtn.addEventListener('click', () => close(true));
     overlay.addEventListener('keydown', (e) => {
@@ -310,8 +331,12 @@ closeBtn.title = 'Save and quit';
 closeBtn.setAttribute('aria-label', 'Save and quit');
 
 closeBtn.addEventListener('click', async () => {
-  if (!await confirmQuit()) return;
-  await saveAndQuit();
+  try {
+    if (!await confirmQuit()) return;
+    await saveAndQuit();
+  } catch (error) {
+    console.error('Failed to save and quit:', error);
+  }
 });
 
 const pinBtn = document.getElementById('btn-pin');
@@ -394,6 +419,13 @@ listen('tray-quit-requested', async () => {
   } catch (error) {
     console.error('Failed to save and quit from tray:', error);
   }
+});
+
+// Tells the backend the app-close-requested listener above is live, so closing the
+// window before this point force-exits instead of waiting forever for an answer
+// that was never going to come (see the CloseRequested handler in main.rs).
+callCommand('mark_renderer_ready').catch((error) => {
+  console.error('Failed to mark renderer ready:', error);
 });
 
 Promise.all([window.refreshStorageStatus(), window.refreshAppMetadata()]).catch((error) => {
