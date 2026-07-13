@@ -3597,6 +3597,7 @@ mod tests {
                 show_personal_tab: false,
                 device_id: Some(generate_device_id()),
                 startup_legacy_import_done: false,
+                ..LocalSettings::default()
             },
         );
 
@@ -3625,6 +3626,7 @@ mod tests {
             show_personal_tab: true,
             device_id: None,
             startup_legacy_import_done: false,
+            ..LocalSettings::default()
         });
         assert!(normalized.sync_folder.is_none());
         assert!(normalized.device_id.is_some());
@@ -3638,12 +3640,14 @@ mod tests {
             show_personal_tab: false,
             device_id: Some("device-a".to_string()),
             startup_legacy_import_done: true,
+            ..LocalSettings::default()
         });
         let imported = normalize_local_settings(LocalSettings {
             sync_folder: Some("C:\\Sync\\TaskTracker".to_string()),
             show_personal_tab: true,
             device_id: Some("device-b".to_string()),
             startup_legacy_import_done: false,
+            ..LocalSettings::default()
         });
 
         let merged = merge_missing_sync_folder(&current, &imported);
