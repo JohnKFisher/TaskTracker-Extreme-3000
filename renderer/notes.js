@@ -48,9 +48,9 @@ async function loadNotes(options = {}) {
   }
 }
 
-async function persistNotes() {
-  if (!notesWritable || !notesDirty) return;
+let notesSaveInFlightPromise = null;
 
+async function doPersistNotes() {
   try {
     const result = await window.callCommand('save_notes', {
       document: {
@@ -81,9 +81,29 @@ async function persistNotes() {
     }
   } catch (error) {
     console.error('Failed to save notes:', error);
+    window.showAppNotice(
+      error.message || 'Could not save notes. Your draft is still here and will retry.',
+      'danger',
+      7000,
+    );
     await window.refreshStorageStatus();
-    await loadNotes({ silent: true });
+  } finally {
+    notesSaveInFlightPromise = null;
   }
+}
+
+async function persistNotes() {
+  if (!notesWritable || !notesDirty) return;
+
+  // Serialize concurrent callers (debounced autosave vs. the quit-flush save hook)
+  // instead of letting two save_notes round-trips race on the same read-modify-write.
+  if (notesSaveInFlightPromise) {
+    await notesSaveInFlightPromise.catch(() => {});
+    return persistNotes();
+  }
+
+  notesSaveInFlightPromise = doPersistNotes();
+  return notesSaveInFlightPromise;
 }
 
 const saveNotes = window.debounce(persistNotes, 350);

@@ -386,6 +386,16 @@ listen('app-close-requested', async () => {
   }
 });
 
+// Tray "Quit" is expected to exit immediately (no confirm dialog), but must still
+// flush pending debounced saves first instead of dropping them like a bare app.exit().
+listen('tray-quit-requested', async () => {
+  try {
+    await saveAndQuit();
+  } catch (error) {
+    console.error('Failed to save and quit from tray:', error);
+  }
+});
+
 Promise.all([window.refreshStorageStatus(), window.refreshAppMetadata()]).catch((error) => {
   console.error('Failed to initialize app state:', error);
 });

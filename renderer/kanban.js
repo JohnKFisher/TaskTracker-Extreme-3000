@@ -253,9 +253,9 @@ async function loadTasks(options = {}) {
   purgeStaleDoneTasks();
 }
 
-async function persistTasks() {
-  if (!isTaskStorageWritable() || !tasksDirty) return;
+let taskSaveInFlightPromise = null;
 
+async function doPersistTasks() {
   taskSaveInFlight = true;
   try {
     const result = await window.callCommand('save_tasks', { document: taskDocument() });
@@ -294,7 +294,22 @@ async function persistTasks() {
     await loadTasks({ silent: true });
   } finally {
     taskSaveInFlight = false;
+    taskSaveInFlightPromise = null;
   }
+}
+
+async function persistTasks() {
+  if (!isTaskStorageWritable() || !tasksDirty) return;
+
+  // Serialize concurrent callers (debounced autosave vs. the quit-flush save hook)
+  // instead of letting two save_tasks round-trips race on the same read-modify-write.
+  if (taskSaveInFlightPromise) {
+    await taskSaveInFlightPromise.catch(() => {});
+    return persistTasks();
+  }
+
+  taskSaveInFlightPromise = doPersistTasks();
+  return taskSaveInFlightPromise;
 }
 
 const saveTasks = window.debounce(persistTasks, 350);
@@ -333,6 +348,15 @@ function renderColumn(board, column) {
     const header = section.querySelector('.section-header');
     if (header) header.setAttribute('aria-expanded', 'true');
   }
+}
+
+// An expanded card's event handlers capture `task` when the card was created, but
+// `applyTaskDocument` (called on every save round-trip and remote reload) replaces
+// `tasks` with brand-new objects. Re-resolving by id keeps in-progress edits landing
+// on the object that's actually part of `tasks` right now, instead of an orphaned copy.
+function findLiveTask(task) {
+  if (!task) return task;
+  return tasks.find((entry) => entry.id === task.id) || task;
 }
 
 function createTaskCard(task) {
@@ -406,21 +430,23 @@ function createTaskCard(task) {
     input.addEventListener('click', (e) => e.stopPropagation());
     input.addEventListener('dblclick', (e) => e.stopPropagation());
     input.addEventListener('input', () => {
-      task.title = input.value;
-      task.updatedAt = new Date().toISOString();
+      const liveTask = findLiveTask(task);
+      liveTask.title = input.value;
+      liveTask.updatedAt = new Date().toISOString();
       markTasksDirty();
     });
     input.addEventListener('keydown', (e) => {
       if (e.key === 'Enter') {
-        task.title = input.value.trim() || task.title;
-        task.updatedAt = new Date().toISOString();
+        const liveTask = findLiveTask(task);
+        liveTask.title = input.value.trim() || liveTask.title;
+        liveTask.updatedAt = new Date().toISOString();
         markTasksDirty();
         saveTasks();
         pendingFocusTaskId = task.id;
-        collapseCard(card, task);
+        collapseCard(card, liveTask);
       } else if (e.key === 'Escape') {
         pendingFocusTaskId = task.id;
-        collapseCard(card, task);
+        collapseCard(card, findLiveTask(task));
       }
     });
     currentTitle.replaceWith(input);
@@ -434,15 +460,16 @@ function createTaskCard(task) {
     notesArea.addEventListener('click', (e) => e.stopPropagation());
     notesArea.addEventListener('dblclick', (e) => e.stopPropagation());
     notesArea.addEventListener('input', () => {
-      task.notes = notesArea.value;
-      task.updatedAt = new Date().toISOString();
+      const liveTask = findLiveTask(task);
+      liveTask.notes = notesArea.value;
+      liveTask.updatedAt = new Date().toISOString();
       markTasksDirty();
       saveTasks();
     });
     notesArea.addEventListener('keydown', (e) => {
       if (e.key === 'Escape') {
         pendingFocusTaskId = task.id;
-        collapseCard(card, task);
+        collapseCard(card, findLiveTask(task));
       }
     });
     card.appendChild(notesArea);
@@ -820,22 +847,31 @@ function collapseCard(card, task) {
 
   const notesArea = card.querySelector('.task-notes-area');
   const titleInput = card.querySelector('.task-title-input');
+  const liveTask = findLiveTask(task);
 
   if (titleInput) {
-    if (task) {
-      task.title = titleInput.value.trim() || task.title;
-      task.updatedAt = new Date().toISOString();
+    if (liveTask) {
+      liveTask.title = titleInput.value.trim() || liveTask.title;
+      liveTask.updatedAt = new Date().toISOString();
       markTasksDirty();
     }
     const newTitle = document.createElement('span');
     newTitle.className = 'task-title';
-    newTitle.textContent = task ? task.title : titleInput.value;
+    newTitle.textContent = liveTask ? liveTask.title : titleInput.value;
     titleInput.replaceWith(newTitle);
   }
 
-  if (notesArea) notesArea.remove();
+  if (notesArea) {
+    if (liveTask) {
+      liveTask.notes = notesArea.value;
+      liveTask.updatedAt = new Date().toISOString();
+      markTasksDirty();
+    }
+    notesArea.remove();
+  }
+
   card.classList.remove('expanded');
-  if (task) alphaSortColumn(task.board, task.column);
+  if (liveTask) alphaSortColumn(liveTask.board, liveTask.column);
   saveTasks();
 }
 

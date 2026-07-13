@@ -129,7 +129,12 @@ function updateGcsDisplay(credentialPath, bucket) {
   bucketInput.value = bucket || '';
 
   const isActive = Boolean(credentialPath && bucket);
-  migrateBtn.classList.toggle('hidden', !isActive);
+  // Migrating only makes sense once GCS is actually reachable — offering it while
+  // the bucket/credentials are unconfirmed just invites migrating into a dead end.
+  const isConnected = isActive
+    && window.currentStorageStatus
+    && window.currentStorageStatus.mode === 'gcs';
+  migrateBtn.classList.toggle('hidden', !isConnected);
   clearBtn.classList.toggle('hidden', !isActive);
 }
 
@@ -195,7 +200,13 @@ document.getElementById('btn-browse-sync-folder').addEventListener('click', asyn
 });
 
 document.getElementById('btn-clear-sync-folder').addEventListener('click', async () => {
-  const confirmed = confirm('Clear the sync folder? Future shared-data writes will stop going to the current shared folder and return to local app data.');
+  // GCS takes priority over the sync folder when both are configured, so clearing
+  // the folder alone won't move active storage back to local app data in that case.
+  const gcsConfigured = Boolean(currentLocalSettings && currentLocalSettings.gcsCredentialPath && currentLocalSettings.gcsBucket);
+  const confirmMessage = gcsConfigured
+    ? 'Clear the sync folder? GCS sync is also configured and takes priority, so shared data will keep going to GCS — this only clears the unused folder setting.'
+    : 'Clear the sync folder? Future shared-data writes will stop going to the current shared folder and return to local app data.';
+  const confirmed = confirm(confirmMessage);
   if (!confirmed) return;
 
   try {
@@ -290,7 +301,14 @@ document.getElementById('btn-save-gcs').addEventListener('click', async () => {
   try {
     const status = await saveLocalSettingsPatch({ gcsCredentialPath: credentialPath, gcsBucket: bucket });
     updateGcsDisplay(credentialPath, bucket);
-    renderGcsResult(`GCS sync enabled for bucket "${bucket}". Existing files will load from GCS on next sync.`, 'info');
+    if (status.mode === 'gcs') {
+      renderGcsResult(`GCS sync enabled for bucket "${bucket}". Existing files will load from GCS on next sync.`, 'info');
+    } else {
+      renderGcsResult(
+        status.message || `Saved, but could not connect to bucket "${bucket}". Check the credential file and bucket name.`,
+        'danger',
+      );
+    }
     renderStorageStatus(status);
     await window.refreshStorageStatus();
   } catch (error) {
@@ -330,6 +348,9 @@ document.getElementById('btn-clear-gcs').addEventListener('click', async () => {
 
 window.addEventListener('storage-status-changed', (event) => {
   renderStorageStatus(event.detail);
+  if (currentLocalSettings) {
+    updateGcsDisplay(currentLocalSettings.gcsCredentialPath || null, currentLocalSettings.gcsBucket || null);
+  }
 });
 
 window.addEventListener('app-metadata-changed', (event) => {

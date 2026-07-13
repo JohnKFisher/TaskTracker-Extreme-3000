@@ -879,6 +879,15 @@ fn compute_storage_status(settings: &LocalSettings, app: &AppHandle) -> StorageS
 
 fn shared_data_dir(settings: &LocalSettings, app: &AppHandle) -> Result<PathBuf, AppError> {
     let status = compute_storage_status(settings, app);
+    // GCS mode has no local shared-data directory: `active_path` there is the bucket
+    // name, not a filesystem path, and must never be used to build a local Path.
+    if status.mode == "gcs" || status.mode == "gcsUnavailable" {
+        return Err(AppError {
+            code: "sync_unavailable".to_string(),
+            message: "Shared data is stored in Google Cloud Storage, not a local folder."
+                .to_string(),
+        });
+    }
     if status.shared_data_available {
         if let Some(active_path) = status.active_path {
             return Ok(PathBuf::from(active_path));
@@ -2288,10 +2297,17 @@ fn setup_tray(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Error>> {
             "toggle" => toggle_main_window(app),
             "about" => focus_about_section(app),
             "quit" => {
-                if let Some(window) = app.get_webview_window("main") {
-                    save_window_state(&window);
+                // Ask the renderer to flush any pending saves before exiting, same as
+                // the window's close button, but without the close button's confirm
+                // dialog — tray Quit is expected to exit immediately, just not lossily.
+                match app.get_webview_window("main") {
+                    Some(window) if window.emit("tray-quit-requested", ()).is_ok() => {}
+                    Some(window) => {
+                        save_window_state(&window);
+                        app.exit(0);
+                    }
+                    None => app.exit(0),
                 }
-                app.exit(0);
             }
             _ => {}
         })
@@ -3206,11 +3222,9 @@ fn write_archive_snapshot(
     tasks: Vec<TaskItem>,
     meeting_notes: String,
     general_notes: String,
-    state: State<AppState>,
     app: AppHandle,
 ) -> CommandResponse<()> {
-    let settings = state.local_settings.lock().unwrap().clone();
-    let dir = match shared_data_dir(&settings, &app) {
+    let dir = match local_app_data_dir(&app) {
         Ok(d) => d,
         Err(err) => return CommandResponse::err(&err.code, err.message),
     };
@@ -3378,8 +3392,27 @@ fn main() {
             #[cfg(target_os = "macos")]
             app.set_activation_policy(tauri::ActivationPolicy::Accessory);
 
-            let initial_local_settings = read_local_settings(app.handle())
-                .unwrap_or_else(|_| normalize_local_settings(LocalSettings::default()));
+            let initial_local_settings = read_local_settings(app.handle()).unwrap_or_else(|err| {
+                // read_local_settings only errors when the file exists but failed to
+                // parse (a missing file already yields Ok(default)) — so this is always
+                // real corruption. Back the bad file up instead of silently discarding
+                // it, since the next save below will overwrite local-settings.json.
+                if let Ok(path) = local_settings_path(app.handle()) {
+                    let backup_path = path.with_file_name(format!("{LOCAL_SETTINGS_FILE}.corrupted"));
+                    match fs::rename(&path, &backup_path) {
+                        Ok(_) => eprintln!(
+                            "Local settings file was corrupted ({}); backed up to {} and reset to defaults.",
+                            err.message,
+                            backup_path.display()
+                        ),
+                        Err(rename_err) => eprintln!(
+                            "Local settings file was corrupted ({}); could not back it up ({rename_err}), resetting to defaults.",
+                            err.message
+                        ),
+                    }
+                }
+                normalize_local_settings(LocalSettings::default())
+            });
             let (mut local_settings, legacy_local_settings_notice) =
                 import_legacy_local_settings_if_needed(&initial_local_settings, app.handle())
                     .unwrap_or((initial_local_settings, None));
