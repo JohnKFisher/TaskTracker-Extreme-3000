@@ -52,6 +52,17 @@ function businessDaysSince(dateString) {
 
 window.businessDaysSince = businessDaysSince;
 
+// Returns the number of hours elapsed since dateString (fractional, non-negative).
+function hoursSince(dateString) {
+  if (!dateString) return Infinity;
+  const start = new Date(dateString).getTime();
+  if (Number.isNaN(start)) return Infinity;
+  const elapsedMs = Date.now() - start;
+  return elapsedMs < 0 ? 0 : elapsedMs / (60 * 60 * 1000);
+}
+
+window.hoursSince = hoursSince;
+
 function taskDocument() {
   return {
     schemaVersion: taskDocumentState.schemaVersion || 2,
@@ -331,6 +342,7 @@ function createTaskCard(task) {
   card.dataset.board = task.board;
   card.tabIndex = 0;
   if (businessDaysSince(task.createdAt) >= 7) card.dataset.stale = 'true';
+  if (hoursSince(task.createdAt) < 2) card.dataset.recent = 'true';
 
   const header = document.createElement('div');
   header.className = 'task-card-header';

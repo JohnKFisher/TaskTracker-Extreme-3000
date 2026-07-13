@@ -3073,6 +3073,7 @@ async fn fetch_tickets(
                 "Priority": get_field(&["Priority", "priority"]),
                 "Agent": get_field(&["Agent", "agent", "assigned_to", "assignee"]),
                 "Category": get_field(&["Category", "category"]),
+                "CreatedAt": get_field(&["CreatedAt", "created_time", "created_at"]),
                 "UpdatedAt": get_field(&["UpdatedAt", "updated_time", "updated_at"]),
             })
         })

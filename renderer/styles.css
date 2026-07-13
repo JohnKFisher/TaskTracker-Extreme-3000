@@ -461,6 +461,14 @@ body.kanban-dragging .task-list {
   background-color: color-mix(in srgb, var(--bg-card-hover) 82%, #d97706 18%);
 }
 
+.task-card[data-recent="true"] {
+  background-color: color-mix(in srgb, var(--bg-card) 90%, #16a34a 10%);
+}
+
+.task-card[data-recent="true"]:hover {
+  background-color: color-mix(in srgb, var(--bg-card-hover) 90%, #16a34a 10%);
+}
+
 .task-card-header {
   display: flex;
   align-items: center;
@@ -787,6 +795,14 @@ body.kanban-dragging .task-list {
 
 .ticket-card[data-stale="true"]:hover {
   background-color: color-mix(in srgb, var(--bg-card-hover) 82%, #d97706 18%);
+}
+
+.ticket-card[data-recent="true"] {
+  background-color: color-mix(in srgb, var(--bg-card) 90%, #16a34a 10%);
+}
+
+.ticket-card[data-recent="true"]:hover {
+  background-color: color-mix(in srgb, var(--bg-card-hover) 90%, #16a34a 10%);
 }
 
 .ticket-info {
