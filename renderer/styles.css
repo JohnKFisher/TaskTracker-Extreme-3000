@@ -20,7 +20,6 @@
   --standing-color: #4f6bed;
   --priority-color: #c23934;
   --todo-color: #0078d4;
-  --inprogress-color: #986f0b;
   --rainyday-color: #5c6a7f;
   --done-color: #0b8f4d;
   --focus-ring: 0 0 0 2px rgba(15, 108, 189, 0.25);
@@ -49,7 +48,6 @@
     --standing-color: #88a2ff;
     --priority-color: #ff9b94;
     --todo-color: #67c2ff;
-    --inprogress-color: #f6c453;
     --rainyday-color: #a5b1c6;
     --done-color: #65d39b;
     --focus-ring: 0 0 0 2px rgba(118, 183, 255, 0.28);
@@ -79,7 +77,6 @@
   --standing-color: #88a2ff;
   --priority-color: #ff9b94;
   --todo-color: #67c2ff;
-  --inprogress-color: #f6c453;
   --rainyday-color: #a5b1c6;
   --done-color: #65d39b;
   --focus-ring: 0 0 0 2px rgba(118, 183, 255, 0.28);
@@ -363,7 +360,6 @@ textarea:disabled {
 .kanban-section[data-column="standing"] .section-header { background: var(--standing-color); }
 .kanban-section[data-column="priority"] .section-header { background: var(--priority-color); }
 .kanban-section[data-column="todo"] .section-header { background: var(--todo-color); }
-.kanban-section[data-column="inprogress"] .section-header { background: var(--inprogress-color); }
 .kanban-section[data-column="rainyday"] .section-header { background: var(--rainyday-color); }
 .kanban-section[data-column="done"] .section-header { background: var(--done-color); }
 

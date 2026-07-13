@@ -1106,6 +1106,9 @@ fn normalize_task_document(mut document: TaskDocument) -> TaskDocument {
 
     for task in &mut document.tasks {
         task.board = normalize_task_board(Some(task.board.clone()));
+        if task.column == "inprogress" {
+            task.column = "todo".to_string();
+        }
         if task.created_at.as_deref().unwrap_or("").is_empty() {
             task.created_at = Some(default_task_timestamp(task, &fallback));
         }
@@ -1895,11 +1898,10 @@ fn normalize_task_orders(tasks: &mut Vec<TaskItem>) {
     let column_rank = |column: &str| match column {
         "standing" => 0,
         "priority" => 1,
-        "inprogress" => 2,
-        "todo" => 3,
-        "rainyday" => 4,
-        "done" => 5,
-        _ => 6,
+        "todo" => 2,
+        "rainyday" => 3,
+        "done" => 4,
+        _ => 5,
     };
 
     let mut buckets: BTreeMap<(String, String), Vec<TaskItem>> = BTreeMap::new();

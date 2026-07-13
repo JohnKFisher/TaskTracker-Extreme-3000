@@ -17,12 +17,11 @@ let taskSaveInFlight = false;
 let dragInProgress = false;
 let pendingFocusTaskId = null;
 let activeDropTarget = null;
-const COLUMNS = ['standing', 'priority', 'inprogress', 'todo', 'rainyday', 'done'];
+const COLUMNS = ['standing', 'priority', 'todo', 'rainyday', 'done'];
 const BOARDS = ['personal', 'work'];
 const COLUMN_LABELS = {
   standing: 'Standing',
   priority: 'Priority',
-  inprogress: 'In Progress',
   todo: 'To-Do',
   rainyday: 'Rainy Day',
   done: 'Done',
