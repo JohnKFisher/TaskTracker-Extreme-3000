@@ -853,12 +853,24 @@ fn compute_storage_status(settings: &LocalSettings, app: &AppHandle) -> StorageS
     if settings.gcs_credential_path.as_deref().filter(|s| !s.trim().is_empty()).is_some()
         && settings.gcs_bucket.as_deref().filter(|s| !s.trim().is_empty()).is_some()
     {
+        if try_create_gcs_client(settings).is_some() {
+            return StorageStatus {
+                mode: "gcs".to_string(),
+                configured_path: settings.gcs_bucket.clone(),
+                active_path: settings.gcs_bucket.clone(),
+                shared_data_available: true,
+                message: None,
+                notice: None,
+            };
+        }
         return StorageStatus {
-            mode: "gcs".to_string(),
+            mode: "gcsUnavailable".to_string(),
             configured_path: settings.gcs_bucket.clone(),
-            active_path: settings.gcs_bucket.clone(),
-            shared_data_available: true,
-            message: None,
+            active_path: None,
+            shared_data_available: false,
+            message: Some(
+                "Could not connect to the configured GCS bucket. Check that the credential file still exists and is a valid service account key.".to_string(),
+            ),
             notice: None,
         };
     }

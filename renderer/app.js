@@ -63,7 +63,7 @@ function renderTopBanner() {
   const banner = document.getElementById('storage-banner');
   banner.classList.remove('info', 'warning', 'danger');
 
-  if (window.currentStorageStatus && (window.currentStorageStatus.mode === 'syncUnavailable' || window.currentStorageStatus.mode === 'localUnavailable')) {
+  if (window.currentStorageStatus && (window.currentStorageStatus.mode === 'syncUnavailable' || window.currentStorageStatus.mode === 'localUnavailable' || window.currentStorageStatus.mode === 'gcsUnavailable')) {
     banner.textContent = window.currentStorageStatus.message || 'Shared data is currently unavailable.';
     banner.classList.add('danger');
     banner.classList.remove('hidden');

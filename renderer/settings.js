@@ -104,6 +104,10 @@ function renderStorageStatus(status) {
     modeValue.textContent = `Configured shared folder unavailable: ${status.configuredPath}`;
     message.textContent = status.message || '';
     message.classList.remove('hidden');
+  } else if (status.mode === 'gcsUnavailable') {
+    modeValue.textContent = `Configured GCS bucket unavailable: ${status.configuredPath}`;
+    message.textContent = status.message || '';
+    message.classList.remove('hidden');
   } else if (status.mode === 'localUnavailable') {
     modeValue.textContent = 'Local app data unavailable';
     message.textContent = status.message || '';
