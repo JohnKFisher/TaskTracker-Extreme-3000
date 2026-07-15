@@ -3152,7 +3152,7 @@ async fn fetch_tickets(
         .map(|ticket| {
             let get_field = |keys: &[&str]| -> Value {
                 keys.iter()
-                    .find_map(|key| ticket.get(*key))
+                    .find_map(|key| ticket.get(*key).filter(|v| !v.is_null()))
                     .cloned()
                     .unwrap_or(Value::Null)
             };
