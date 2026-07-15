@@ -271,7 +271,7 @@ async function toggleHideTicket(ticketNumber) {
   }
 }
 
-async function runTicketFetch() {
+async function runTicketFetch(forceFull = false) {
   if (!(ticketState && ticketState.hasApiKey && ticketState.desk365Domain)) return;
   if (!(window.currentStorageStatus && window.currentStorageStatus.sharedDataAvailable)) return;
 
@@ -280,7 +280,7 @@ async function runTicketFetch() {
   lastTicketFetchStartedAt = Date.now();
 
   try {
-    const result = await window.callCommand('fetch_tickets');
+    const result = await window.callCommand('fetch_tickets', { forceFull });
     const newTickets = result.tickets || [];
 
     if (seenTicketNumbers.size > 0) {
@@ -313,7 +313,7 @@ async function runTicketFetch() {
 }
 
 function fetchAndRenderTickets(options = {}) {
-  const { force = false } = options;
+  const { force = false, forceFull = false } = options;
 
   if (ticketFetchInFlight) {
     return ticketFetchInFlight;
@@ -331,12 +331,12 @@ function fetchAndRenderTickets(options = {}) {
     return new Promise((resolve, reject) => {
       queuedFetchTimer = setTimeout(() => {
         queuedFetchTimer = null;
-        fetchAndRenderTickets({ force: true }).then(resolve).catch(reject);
+        fetchAndRenderTickets({ force: true, forceFull }).then(resolve).catch(reject);
       }, remainingMs);
     });
   }
 
-  ticketFetchInFlight = runTicketFetch()
+  ticketFetchInFlight = runTicketFetch(forceFull)
     .finally(() => {
       ticketFetchInFlight = null;
     });
@@ -437,7 +437,7 @@ changeApiKeyBtn.addEventListener('click', async () => {
   }
 });
 
-refreshBtn.addEventListener('click', () => fetchAndRenderTickets({ force: true }));
+refreshBtn.addEventListener('click', () => fetchAndRenderTickets({ force: true, forceFull: true }));
 showHiddenCheckbox.addEventListener('change', () => {
   try {
     renderTickets();
