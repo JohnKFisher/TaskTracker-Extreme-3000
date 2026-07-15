@@ -3097,7 +3097,9 @@ async fn fetch_tickets(
     let mut offset = 0usize;
 
     loop {
-        let url = format!("{base_url}?offset={offset}&order_by=updated_time&order_type=descending");
+        let url = format!(
+            "{base_url}?offset={offset}&ticket_count=100&order_by=updated_time&order_type=descending"
+        );
 
         let response = match client
             .get(&url)
@@ -3135,11 +3137,16 @@ async fn fetch_tickets(
         let count = tickets.len();
         all_tickets.extend(tickets);
 
-        // Don't assume a page size (Desk365's actual default isn't pinned down by an
-        // explicit `limit` param here): stop only on a genuinely empty page, and
-        // advance the offset by however many tickets this page actually returned,
-        // so this stays correct regardless of what that default page size is.
-        if count == 0 || all_tickets.len() >= 300 {
+        // Stop only on a genuinely empty page. A fixed item-count cap here previously
+        // cut pagination short before reaching old tickets: Desk365 sorts by
+        // updated_time descending across ALL tickets (including Closed/Resolved ones,
+        // which only get filtered out client-side below), so a tenant with enough
+        // ticket volume could push genuinely old-but-unresolved tickets past a fixed
+        // cap without ever fetching the page they're on. 20,000 is a runaway-loop
+        // backstop only (Desk365's documented rate limit is 10,000 tickets/hour, so
+        // hitting this would already mean the API is behaving unexpectedly), not a
+        // real ceiling on ticket count.
+        if count == 0 || all_tickets.len() >= 20_000 {
             break;
         }
 
