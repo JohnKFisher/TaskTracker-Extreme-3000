@@ -29,6 +29,7 @@ const TICKET_SETTINGS_FILE: &str = "config.json";
 const HIDDEN_TICKETS_FILE: &str = "hidden-tickets.json";
 const WINDOW_STATE_FILE: &str = "window-state.json";
 const LOCAL_SETTINGS_FILE: &str = "local-settings.json";
+const TICKET_CACHE_FILE: &str = "ticket-cache.json";
 const SHARED_DATA_FILES: [&str; 4] = [
     TASKS_FILE,
     NOTES_FILE,
@@ -553,6 +554,10 @@ fn local_app_data_dir(app: &AppHandle) -> Result<PathBuf, AppError> {
 
 fn local_settings_path(app: &AppHandle) -> Result<PathBuf, AppError> {
     Ok(local_app_data_dir(app)?.join(LOCAL_SETTINGS_FILE))
+}
+
+fn ticket_cache_path(app: &AppHandle) -> Result<PathBuf, AppError> {
+    Ok(local_app_data_dir(app)?.join(TICKET_CACHE_FILE))
 }
 
 fn window_state_path(app: &AppHandle) -> Result<PathBuf, AppError> {
@@ -2361,7 +2366,9 @@ fn setup_tray(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
-fn format_iso_timestamp(unix_secs: u64) -> String {
+// Civil (year, month, day, hour, minute, second) UTC fields for a Unix timestamp.
+// Shared by every formatter below so the date math only lives in one place.
+fn civil_from_unix_secs(unix_secs: u64) -> (u64, u64, u64, u64, u64, u64) {
     let s = unix_secs % 60;
     let m = (unix_secs / 60) % 60;
     let h = (unix_secs / 3600) % 24;
@@ -2377,7 +2384,22 @@ fn format_iso_timestamp(unix_secs: u64) -> String {
     let mo = if mp < 10 { mp + 3 } else { mp - 9 };
     let yr = if mo <= 2 { y + 1 } else { y };
 
+    (yr, mo, d, h, m, s)
+}
+
+fn format_iso_timestamp(unix_secs: u64) -> String {
+    let (yr, mo, d, h, m, s) = civil_from_unix_secs(unix_secs);
     format!("{yr:04}-{mo:02}-{d:02}T{h:02}:{m:02}:{s:02}.000Z")
+}
+
+// Desk365's `updated_since` ticket-list filter expects "yyyy-mm-dd hh:mm:ss" (space
+// separator, no fractional seconds or "Z") rather than the ISO 8601 format used
+// elsewhere in this app. Assumed UTC, since Desk365's docs don't specify a timezone
+// for this parameter; the weekly full-reconcile fetch (see fetch_tickets) self-heals
+// any drift if that assumption is ever wrong for a given tenant.
+fn format_desk365_query_timestamp(unix_secs: u64) -> String {
+    let (yr, mo, d, h, m, s) = civil_from_unix_secs(unix_secs);
+    format!("{yr:04}-{mo:02}-{d:02} {h:02}:{m:02}:{s:02}")
 }
 
 // Desk365 timestamp fields are usually ISO strings already, but some deployments
@@ -3040,8 +3062,41 @@ fn open_external_url(url: String, app: AppHandle) -> CommandResponse<()> {
     }
 }
 
+// Machine-local (not synced) cache of the last known-good ticket list, so routine
+// polls can ask Desk365 only for what changed instead of re-fetching every ticket
+// the tenant has ever had.
+#[derive(Debug, Serialize, Deserialize, Clone, Default)]
+#[serde(rename_all = "camelCase")]
+struct TicketCacheDocument {
+    #[serde(default)]
+    tickets: Vec<Value>,
+    #[serde(default)]
+    last_sync_secs: Option<u64>,
+    #[serde(default)]
+    last_full_sync_secs: Option<u64>,
+}
+
+const ONE_WEEK_SECS: u64 = 7 * 24 * 60 * 60;
+// Overlap the incremental "since" cutoff a bit behind the last recorded sync time, as
+// a cheap guard against clock skew between this machine and Desk365's server — a
+// ticket updated right at the edge of the window is simply re-fetched and merged
+// again rather than possibly missed.
+const INCREMENTAL_LOOKBACK_BUFFER_SECS: u64 = 15 * 60;
+
+// Tickets are keyed by TicketNumber (falling back to TicketId) for cache merging,
+// matching how the frontend already identifies tickets for hiding/notifications.
+fn ticket_cache_key(ticket: &Value) -> Option<String> {
+    ticket
+        .get("TicketNumber")
+        .and_then(Value::as_str)
+        .filter(|s| !s.is_empty())
+        .or_else(|| ticket.get("TicketId").and_then(Value::as_str))
+        .map(str::to_string)
+}
+
 #[tauri::command]
 async fn fetch_tickets(
+    force_full: bool,
     state: State<'_, AppState>,
     app: AppHandle,
 ) -> Result<CommandResponse<Value>, String> {
@@ -3092,15 +3147,56 @@ async fn fetch_tickets(
         Err(err) => return Ok(CommandResponse::err("network_error", err.to_string())),
     };
 
+    let cache_path = match ticket_cache_path(&app) {
+        Ok(path) => path,
+        Err(err) => return Ok(CommandResponse::err(&err.code, err.message)),
+    };
+    let mut cache: TicketCacheDocument = match read_or_default(&cache_path) {
+        Ok(doc) => doc,
+        Err(err) => return Ok(CommandResponse::err(&err.code, err.message)),
+    };
+
+    let now_secs = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs();
+
+    // A full reconcile is due if one was explicitly requested (manual refresh button),
+    // if it's been a week since the last one, or if there's no cache yet at all (first
+    // run, or the cache file was cleared) — in every other case, ask Desk365 only for
+    // what changed since the last successful fetch of any kind.
+    let full_sync_due = match cache.last_full_sync_secs {
+        Some(last) => now_secs.saturating_sub(last) >= ONE_WEEK_SECS,
+        None => true,
+    };
+    let do_full = force_full || full_sync_due;
+
+    let updated_since = if do_full {
+        None
+    } else {
+        cache.last_sync_secs.map(|secs| {
+            format_desk365_query_timestamp(secs.saturating_sub(INCREMENTAL_LOOKBACK_BUFFER_SECS))
+        })
+    };
+
     let base_url = format!("https://{desk365_domain}/apis/v3/tickets");
     let mut all_tickets: Vec<Value> = Vec::new();
     let mut offset = 0usize;
 
     loop {
-        let url = format!("{base_url}?offset={offset}&order_by=updated_time&order_type=descending");
+        let mut query: Vec<(&'static str, String)> = vec![
+            ("offset", offset.to_string()),
+            ("ticket_count", "100".to_string()),
+            ("order_by", "updated_time".to_string()),
+            ("order_type", "descending".to_string()),
+        ];
+        if let Some(since) = updated_since.as_deref() {
+            query.push(("updated_since", since.to_string()));
+        }
 
         let response = match client
-            .get(&url)
+            .get(&base_url)
+            .query(&query)
             .header("Authorization", &api_key)
             .header("Accept", "application/json")
             .send()
@@ -3135,11 +3231,16 @@ async fn fetch_tickets(
         let count = tickets.len();
         all_tickets.extend(tickets);
 
-        // Don't assume a page size (Desk365's actual default isn't pinned down by an
-        // explicit `limit` param here): stop only on a genuinely empty page, and
-        // advance the offset by however many tickets this page actually returned,
-        // so this stays correct regardless of what that default page size is.
-        if count == 0 || all_tickets.len() >= 300 {
+        // Stop only on a genuinely empty page. A fixed item-count cap here previously
+        // cut pagination short before reaching old tickets: Desk365 sorts by
+        // updated_time descending across ALL tickets (including Closed/Resolved ones,
+        // which only get filtered out during the cache merge below), so a tenant with
+        // enough ticket volume could push genuinely old-but-unresolved tickets past a
+        // fixed cap without ever fetching the page they're on. 20,000 is a
+        // runaway-loop backstop only (Desk365's documented rate limit is 10,000
+        // tickets/hour, so hitting this would already mean the API is behaving
+        // unexpectedly), not a real ceiling on ticket count.
+        if count == 0 || all_tickets.len() >= 20_000 {
             break;
         }
 
@@ -3177,15 +3278,54 @@ async fn fetch_tickets(
                 "UpdatedAt": normalize_ticket_timestamp(get_field(&["UpdatedAt", "updated_time", "updated_at"])),
             })
         })
-        .filter(|ticket| {
-            let status = ticket.get("Status").and_then(Value::as_str).unwrap_or("");
-            !matches!(status, "Closed" | "Resolved" | "closed" | "resolved")
-        })
         .collect();
 
+    // Merge this fetch's tickets into the cache instead of just replacing it: on a
+    // full sync the starting point is empty, so only tickets Desk365 actually
+    // returned (and aren't Closed/Resolved) survive — that's what makes a full sync
+    // authoritative for deletions too. On an incremental sync the starting point is
+    // the existing cache, so tickets outside this fetch's `updated_since` window (the
+    // ones that haven't changed) are left untouched rather than dropped, while any
+    // ticket in this batch that has since moved to Closed/Resolved gets evicted right
+    // here — not filtered out beforehand — otherwise we'd never learn it left the
+    // open set and it would stay cached as open forever.
+    let mut merged: BTreeMap<String, Value> = if do_full {
+        BTreeMap::new()
+    } else {
+        cache
+            .tickets
+            .iter()
+            .filter_map(|ticket| ticket_cache_key(ticket).map(|key| (key, ticket.clone())))
+            .collect()
+    };
+
+    for ticket in normalized {
+        let Some(key) = ticket_cache_key(&ticket) else {
+            continue;
+        };
+        let status = ticket.get("Status").and_then(Value::as_str).unwrap_or("");
+        if matches!(status, "Closed" | "Resolved" | "closed" | "resolved") {
+            merged.remove(&key);
+        } else {
+            merged.insert(key, ticket);
+        }
+    }
+
+    let merged_tickets: Vec<Value> = merged.into_values().collect();
+
+    cache.tickets = merged_tickets.clone();
+    cache.last_sync_secs = Some(now_secs);
+    if do_full {
+        cache.last_full_sync_secs = Some(now_secs);
+    }
+
+    if let Err(err) = write_json_file(&cache_path, &cache) {
+        return Ok(CommandResponse::err(&err.code, err.message));
+    }
+
     Ok(CommandResponse::ok(json!({
-        "tickets": normalized,
-        "total": all_tickets.len(),
+        "tickets": merged_tickets,
+        "total": merged_tickets.len(),
     })))
 }
 
