@@ -265,6 +265,48 @@ async function toggleHideTicket(ticketNumber) {
   }
 }
 
+// Shared by both the progressive in-flight updates (tickets-progress events, as a
+// sync streams in page by page) and the final resolved fetch_tickets result. New-
+// ticket notification diffing only happens when priorSeenTicketNumbers is passed in
+// (i.e. only for the final applied batch) — otherwise an early page of a long full
+// sync would mark a brand-new ticket as "seen" before the notification check for it
+// ever runs, and it would silently never get notified about.
+function applyTicketUpdate(newTickets, { priorSeenTicketNumbers = null, statusText = null } = {}) {
+  if (priorSeenTicketNumbers && priorSeenTicketNumbers.size > 0) {
+    const brandNew = newTickets.filter((ticket) => !priorSeenTicketNumbers.has(ticket.TicketNumber));
+    if (brandNew.length > 0) {
+      const summary = brandNew.length === 1
+        ? `#${brandNew[0].TicketNumber}: ${brandNew[0].Subject}`
+        : `${brandNew.length} new tickets`;
+      pendingNotificationTicketNumbers = brandNew.map((ticket) => ticket.TicketNumber);
+      window.callCommand('show_notification', {
+        title: 'New Desk365 Tickets',
+        body: summary,
+      }).catch((error) => console.error('Failed to show new-ticket notification:', error));
+    }
+  }
+
+  newTickets.sort((a, b) => (parseInt(b.TicketNumber, 10) || 0) - (parseInt(a.TicketNumber, 10) || 0));
+
+  seenTicketNumbers = new Set(newTickets.map((ticket) => ticket.TicketNumber));
+  currentTickets = newTickets;
+  window.updateTabCount('tickets', currentTickets.length);
+  ticketsStatus.textContent = statusText !== null
+    ? statusText
+    : `${newTickets.length} unresolved tickets (updated ${new Date().toLocaleTimeString()})`;
+  renderTickets();
+}
+
+window.addEventListener('tickets-progress', (event) => {
+  const detail = event.detail || {};
+  if (detail.done) return; // the final state is applied from the resolved fetch_tickets call below
+  const tickets = Array.isArray(detail.tickets) ? detail.tickets : [];
+  const totalText = detail.totalKnown ? ` of ${detail.totalKnown}` : '';
+  applyTicketUpdate(tickets, {
+    statusText: `Syncing… checked ${detail.fetched || 0}${totalText} tickets, ${tickets.length} open so far`,
+  });
+});
+
 async function runTicketFetch(forceFull = false) {
   if (!(ticketState && ticketState.hasApiKey && ticketState.desk365Domain)) return;
   if (!(window.currentStorageStatus && window.currentStorageStatus.sharedDataAvailable)) return;
@@ -272,35 +314,20 @@ async function runTicketFetch(forceFull = false) {
   ticketsStatus.textContent = 'Loading tickets…';
   refreshBtn.disabled = true;
   lastTicketFetchStartedAt = Date.now();
+  const priorSeenTicketNumbers = seenTicketNumbers;
 
   try {
     const result = await window.callCommand('fetch_tickets', { forceFull });
     const newTickets = result.tickets || [];
-
-    if (seenTicketNumbers.size > 0) {
-      const brandNew = newTickets.filter((ticket) => !seenTicketNumbers.has(ticket.TicketNumber));
-      if (brandNew.length > 0) {
-        const summary = brandNew.length === 1
-          ? `#${brandNew[0].TicketNumber}: ${brandNew[0].Subject}`
-          : `${brandNew.length} new tickets`;
-        pendingNotificationTicketNumbers = brandNew.map((ticket) => ticket.TicketNumber);
-        await window.callCommand('show_notification', {
-          title: 'New Desk365 Tickets',
-          body: summary,
-        });
-      }
-    }
-
-    newTickets.sort((a, b) => (parseInt(b.TicketNumber, 10) || 0) - (parseInt(a.TicketNumber, 10) || 0));
-
-    seenTicketNumbers = new Set(newTickets.map((ticket) => ticket.TicketNumber));
-    currentTickets = newTickets;
-    window.updateTabCount('tickets', currentTickets.length);
-    ticketsStatus.textContent = `${newTickets.length} unresolved tickets (updated ${new Date().toLocaleTimeString()})`;
-    renderTickets();
+    const statusText = result.partial
+      ? (result.message || 'Ticket sync was interrupted; showing the last synced list.')
+      : null;
+    applyTicketUpdate(newTickets, { priorSeenTicketNumbers, statusText });
   } catch (error) {
     ticketsStatus.textContent = error.message || 'Could not load tickets.';
-    setTicketSetupVisible(true);
+    if (error.code === 'missing_domain' || error.code === 'missing_api_key') {
+      setTicketSetupVisible(true);
+    }
   } finally {
     refreshBtn.disabled = !(window.currentStorageStatus && window.currentStorageStatus.sharedDataAvailable);
   }

@@ -419,6 +419,12 @@ listen('shared-data-changed', (event) => {
   }));
 });
 
+listen('tickets-progress', (event) => {
+  window.dispatchEvent(new CustomEvent('tickets-progress', {
+    detail: event.payload || { tickets: [], fetched: 0, totalKnown: null, done: true },
+  }));
+});
+
 listen('navigate-to-tab', (event) => {
   const payload = event.payload || {};
   setActiveTab(payload.tab || 'settings', payload.section);
