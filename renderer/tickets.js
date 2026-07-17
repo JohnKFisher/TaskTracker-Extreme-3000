@@ -167,12 +167,6 @@ function renderTickets() {
     status.textContent = ticket.Status || 'Unknown';
     meta.appendChild(status);
 
-    if (ticket.Priority) {
-      const priority = document.createElement('span');
-      priority.textContent = ticket.Priority;
-      meta.appendChild(priority);
-    }
-
     if (typeof ticket.Agent === 'string' && ticket.Agent) {
       const agent = document.createElement('span');
       agent.textContent = ticket.Agent.split('@')[0];
