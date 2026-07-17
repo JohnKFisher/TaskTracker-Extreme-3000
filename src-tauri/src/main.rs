@@ -3514,6 +3514,82 @@ fn write_archive_snapshot(
     CommandResponse::ok(())
 }
 
+/// User-initiated export of tasks + notes to a location the user picks. Desk365
+/// tickets are deliberately excluded: ticket content is always re-fetched live from
+/// Desk365, so there's nothing owned/authored to back up there.
+#[tauri::command]
+async fn export_backup(
+    state: State<'_, AppState>,
+    app: AppHandle,
+) -> Result<CommandResponse<Option<String>>, ()> {
+    use tauri_plugin_dialog::DialogExt;
+
+    let default_name = format!(
+        "tasktracker-backup-{}.json",
+        current_iso_timestamp()
+            .replace(':', "-")
+            .chars()
+            .take(19) // drop milliseconds and Z
+            .collect::<String>()
+    );
+
+    let (tx, rx) = tokio::sync::oneshot::channel();
+    app.dialog()
+        .file()
+        .set_title("Export Backup")
+        .set_file_name(&default_name)
+        .add_filter("JSON", &["json"])
+        .save_file(move |file| {
+            let _ = tx.send(file);
+        });
+
+    let destination = match rx.await {
+        Ok(Some(path)) => path,
+        Ok(None) => return Ok(CommandResponse::ok(None)),
+        Err(err) => return Ok(CommandResponse::err("dialog_error", err.to_string())),
+    };
+    let dest_path = match destination.clone().into_path() {
+        Ok(p) => p,
+        Err(_) => PathBuf::from(normalize_path_value(&destination.to_string())),
+    };
+
+    let (settings, gcs) = {
+        let s = state.local_settings.lock().unwrap().clone();
+        let g = state.gcs_client.lock().unwrap().clone();
+        (s, g)
+    };
+
+    let tasks_doc = match if let Some(client) = &gcs {
+        gcs_read_tasks(client).await
+    } else {
+        read_tasks_document(&settings, &app)
+    } {
+        Ok(doc) => doc,
+        Err(err) => return Ok(CommandResponse::err(&err.code, err.message)),
+    };
+
+    let notes_doc = match if let Some(client) = &gcs {
+        gcs_read_notes(client).await
+    } else {
+        read_notes_document(&settings, &app)
+    } {
+        Ok(doc) => doc,
+        Err(err) => return Ok(CommandResponse::err(&err.code, err.message)),
+    };
+
+    let bundle = json!({
+        "exportedAt": current_iso_timestamp(),
+        "tasks": tasks_doc,
+        "notes": notes_doc,
+    });
+
+    if let Err(err) = write_json_file(&dest_path, &bundle) {
+        return Ok(CommandResponse::err(&err.code, err.message));
+    }
+
+    Ok(CommandResponse::ok(Some(dest_path.to_string_lossy().to_string())))
+}
+
 #[tauri::command]
 async fn test_gcs_connection(
     credential_path: String,
@@ -3783,6 +3859,7 @@ fn main() {
             close_quick_add,
             pick_sync_folder,
             write_archive_snapshot,
+            export_backup,
             test_gcs_connection,
             migrate_to_gcs,
         ])

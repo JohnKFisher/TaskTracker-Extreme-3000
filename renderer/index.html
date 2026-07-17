@@ -238,6 +238,17 @@
       </div>
 
       <div class="settings-section">
+        <div class="settings-section-title">Backup</div>
+        <p class="settings-hint">
+          Save a snapshot of your tasks and notes to a file you choose. Desk365 tickets aren't included — they're always re-fetched live from Desk365.
+        </p>
+        <div class="settings-buttons">
+          <button id="btn-export-backup" type="button" class="settings-btn">Export Backup…</button>
+        </div>
+        <div id="export-backup-result" class="info-card-message info hidden"></div>
+      </div>
+
+      <div class="settings-section">
         <div class="settings-section-title">Google Cloud Storage Sync <span class="settings-optional-badge">optional</span></div>
         <p class="settings-hint">
           Alternative to a sync folder. Provide a GCS service account key file and bucket name to sync tasks and notes directly through Google Cloud Storage. GCS sync takes priority over the sync folder when active.

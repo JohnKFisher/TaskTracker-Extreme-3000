@@ -166,6 +166,19 @@ function renderSyncFolderNotice(message, tone = 'info') {
   notice.classList.add(tone);
 }
 
+function renderExportBackupResult(message, tone = 'info') {
+  const el = document.getElementById('export-backup-result');
+  if (!message) {
+    el.classList.add('hidden');
+    el.classList.remove('info', 'warning', 'danger');
+    el.textContent = '';
+    return;
+  }
+  el.textContent = message;
+  el.classList.remove('hidden', 'info', 'warning', 'danger');
+  el.classList.add(tone);
+}
+
 function renderAbout(metadata) {
   if (!metadata) return;
 
@@ -258,6 +271,24 @@ document.getElementById('btn-open-github').addEventListener('click', async () =>
     await window.openExternal(window.appMetadata.githubUrl);
   } catch (error) {
     console.error('Failed to open GitHub URL:', error);
+  }
+});
+
+document.getElementById('btn-export-backup').addEventListener('click', async () => {
+  const btn = document.getElementById('btn-export-backup');
+  btn.disabled = true;
+  renderExportBackupResult('Exporting…');
+  try {
+    const path = await window.callCommand('export_backup');
+    if (path) {
+      renderExportBackupResult(`Exported to ${path}`, 'info');
+    } else {
+      renderExportBackupResult(null);
+    }
+  } catch (error) {
+    renderExportBackupResult(error.message || 'Could not export backup.', 'danger');
+  } finally {
+    btn.disabled = false;
   }
 });
 
