@@ -363,7 +363,9 @@ const pinBtn = document.getElementById('btn-pin');
 if (isIOS) {
   pinBtn.style.display = 'none';
 } else {
-  pinBtn.classList.add('pinned');
+  callCommand('get_always_on_top')
+    .then((isOnTop) => pinBtn.classList.toggle('pinned', isOnTop))
+    .catch(() => pinBtn.classList.add('pinned'));
   pinBtn.addEventListener('click', async () => {
     const isOnTop = await callCommand('toggle_always_on_top');
     pinBtn.classList.toggle('pinned', isOnTop);
@@ -414,6 +416,12 @@ listen('shared-data-changed', (event) => {
   scheduleReconcile();
   window.dispatchEvent(new CustomEvent('shared-data-changed', {
     detail: event.payload || { files: [] },
+  }));
+});
+
+listen('tickets-progress', (event) => {
+  window.dispatchEvent(new CustomEvent('tickets-progress', {
+    detail: event.payload || { tickets: [], fetched: 0, totalKnown: null, done: true },
   }));
 });
 

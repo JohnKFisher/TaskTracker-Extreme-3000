@@ -2144,6 +2144,7 @@ fn save_window_state(window: &tauri::WebviewWindow) {
             "y": pos.y,
             "width": size.width,
             "height": size.height,
+            "alwaysOnTop": window.is_always_on_top().unwrap_or(true),
         });
         let _ = write_json_file(&path, &data);
     }
@@ -2232,6 +2233,10 @@ fn restore_window_state(app: &AppHandle) {
         place_main_window_on_sidebar_edge(&window);
         return;
     };
+
+    if let Some(always_on_top) = state.get("alwaysOnTop").and_then(Value::as_bool) {
+        let _ = window.set_always_on_top(always_on_top);
+    }
 
     if let (Some(x), Some(y), Some(w), Some(h)) = (
         state.get("x").and_then(Value::as_i64),
@@ -3042,10 +3047,20 @@ fn quit_app(app: AppHandle) -> CommandResponse<()> {
 }
 
 #[tauri::command]
+fn get_always_on_top(window: tauri::WebviewWindow) -> CommandResponse<bool> {
+    CommandResponse::ok(window.is_always_on_top().unwrap_or(true))
+}
+
+#[tauri::command]
 fn toggle_always_on_top(window: tauri::WebviewWindow) -> CommandResponse<bool> {
     let current = window.is_always_on_top().unwrap_or(true);
     match window.set_always_on_top(!current) {
-        Ok(_) => CommandResponse::ok(!current),
+        Ok(_) => {
+            // Toggling doesn't move or resize the window, so without an explicit save
+            // here the new pin state would only persist on the next drag/resize/quit.
+            save_window_state(&window);
+            CommandResponse::ok(!current)
+        }
         Err(err) => CommandResponse::err("window_error", err.to_string()),
     }
 }
@@ -3093,6 +3108,93 @@ fn ticket_cache_key(ticket: &Value) -> Option<String> {
         .or_else(|| ticket.get("TicketId").and_then(Value::as_str))
         .map(str::to_string)
 }
+
+fn normalize_ticket(ticket: &Value) -> Value {
+    let get_field = |keys: &[&str]| -> Value {
+        keys.iter()
+            .find_map(|key| ticket.get(*key).filter(|v| !v.is_null()))
+            .cloned()
+            .unwrap_or(Value::Null)
+    };
+
+    json!({
+        // "id" is only a last-resort fallback (used last in this list) for
+        // tenants whose API response doesn't expose a dedicated ticket-number
+        // field; this display value also builds the Desk365 deep link
+        // (tickets.js), so a tenant where "id" is an unrelated internal key
+        // would show/link the wrong identifier here with no way to detect it.
+        "TicketNumber": match get_field(&["TicketNumber", "ticket_number", "ticketNumber", "id"]) {
+            Value::Number(n) => Value::String(n.to_string()),
+            v => v,
+        },
+        "TicketId": get_field(&["ticket_id", "TicketId", "id", "ticket_number", "TicketNumber"]),
+        "Subject": get_field(&["Subject", "subject", "title"]),
+        "Status": get_field(&["Status", "status", "ticket_status"]),
+        "Priority": get_field(&["Priority", "priority"]),
+        "Agent": get_field(&["Agent", "agent", "assigned_to", "assignee"]),
+        "Category": get_field(&["Category", "category"]),
+        // Confirmed via a live Desk365 v3 response: the ticket-list endpoint's
+        // actual field names are "created_on"/"updated_on" — not the
+        // "created_time"/"updated_time" query-parameter names the docs use for
+        // order_by, nor any of the other candidates below. Kept as fallbacks in
+        // case another tenant/API version genuinely differs.
+        "CreatedAt": normalize_ticket_timestamp(get_field(&["created_on", "CreatedAt", "created_time", "created_at"])),
+        "UpdatedAt": normalize_ticket_timestamp(get_field(&["updated_on", "UpdatedAt", "updated_time", "updated_at"])),
+    })
+}
+
+// Upserts an open ticket, or evicts one that has moved to Closed/Resolved — the
+// latter only happens here (not as an upfront filter) so a ticket that was already
+// cached as open and has since closed gets correctly dropped instead of lingering
+// forever, and so this same function works for both a full-sync's empty starting
+// map and an incremental sync's existing-cache starting map.
+fn merge_ticket_into(merged: &mut BTreeMap<String, Value>, ticket: Value) {
+    let Some(key) = ticket_cache_key(&ticket) else {
+        return;
+    };
+    let status = ticket.get("Status").and_then(Value::as_str).unwrap_or("");
+    if matches!(status, "Closed" | "Resolved" | "closed" | "resolved") {
+        merged.remove(&key);
+    } else {
+        merged.insert(key, ticket);
+    }
+}
+
+#[derive(Debug, Serialize, Clone)]
+#[serde(rename_all = "camelCase")]
+struct TicketProgressEvent {
+    tickets: Vec<Value>,
+    fetched: usize,
+    total_known: Option<u64>,
+    done: bool,
+}
+
+fn emit_ticket_progress(
+    app: &AppHandle,
+    tickets: Vec<Value>,
+    fetched: usize,
+    total_known: Option<u64>,
+    done: bool,
+) {
+    if let Some(window) = app.get_webview_window("main") {
+        let _ = window.emit(
+            "tickets-progress",
+            TicketProgressEvent {
+                tickets,
+                fetched,
+                total_known,
+                done,
+            },
+        );
+    }
+}
+
+// Desk365's documented quota is 50 calls/minute. A single sync can be dozens of
+// pages for a large ticket volume, so pace requests well under that quota instead
+// of at a fixed short interval — otherwise one sync can consume the whole quota
+// itself and 429 partway through, especially with anything else (another poll,
+// another machine) sharing the same API key.
+const DESK365_REQUEST_INTERVAL_MS: u64 = 3_000; // 20 requests/min
 
 #[tauri::command]
 async fn fetch_tickets(
@@ -3180,8 +3282,31 @@ async fn fetch_tickets(
     };
 
     let base_url = format!("https://{desk365_domain}/apis/v3/tickets");
-    let mut all_tickets: Vec<Value> = Vec::new();
     let mut offset = 0usize;
+    let mut total_fetched = 0usize;
+    let mut page_count = 0usize;
+    let mut total_known: Option<u64> = None;
+
+    // Merge this fetch's tickets into the cache instead of just replacing it: on a
+    // full sync the starting point is empty, so only tickets Desk365 actually
+    // returned (and aren't Closed/Resolved) survive — that's what makes a full sync
+    // authoritative for deletions too. On an incremental sync the starting point is
+    // the existing cache, so tickets outside this fetch's `updated_since` window (the
+    // ones that haven't changed) are left untouched rather than dropped.
+    let mut merged: BTreeMap<String, Value> = if do_full {
+        BTreeMap::new()
+    } else {
+        cache
+            .tickets
+            .iter()
+            .filter_map(|ticket| ticket_cache_key(ticket).map(|key| (key, ticket.clone())))
+            .collect()
+    };
+
+    // Any page-request failure (network hiccup, or Desk365's 429 rate limit) breaks
+    // out here instead of aborting the whole command: whatever was already merged
+    // stays intact, and how it's handled afterward depends on do_full (see below).
+    let mut sync_error: Option<String> = None;
 
     loop {
         let mut query: Vec<(&'static str, String)> = vec![
@@ -3203,112 +3328,107 @@ async fn fetch_tickets(
             .await
         {
             Ok(response) => response,
-            Err(err) => return Ok(CommandResponse::err("network_error", err.to_string())),
+            Err(err) => {
+                sync_error = Some(format!("Network error: {err}"));
+                break;
+            }
         };
 
         if !response.status().is_success() {
             let status = response.status().as_u16();
             let body = response.text().await.unwrap_or_default();
             let snippet: String = body.chars().take(200).collect();
-            return Ok(CommandResponse::err(
-                "desk365_error",
-                format!("Desk365 API error: {status} — {snippet}"),
-            ));
+            sync_error = Some(format!("Desk365 API error: {status} — {snippet}"));
+            break;
         }
 
         let result: Value = match response.json().await {
             Ok(value) => value,
-            Err(err) => return Ok(CommandResponse::err("network_error", err.to_string())),
+            Err(err) => {
+                sync_error = Some(format!("Network error: {err}"));
+                break;
+            }
         };
 
-        let tickets = result
+        if total_known.is_none() {
+            total_known = result.get("count").and_then(Value::as_u64);
+        }
+
+        let raw_tickets = result
             .get("tickets")
             .or_else(|| result.get("data"))
             .and_then(Value::as_array)
             .cloned()
             .unwrap_or_default();
 
-        let count = tickets.len();
-        all_tickets.extend(tickets);
+        let count = raw_tickets.len();
+        total_fetched += count;
+        page_count += 1;
+        for raw in &raw_tickets {
+            merge_ticket_into(&mut merged, normalize_ticket(raw));
+        }
+
+        emit_ticket_progress(
+            &app,
+            merged.values().cloned().collect(),
+            total_fetched,
+            total_known,
+            false,
+        );
 
         // Stop only on a genuinely empty page. A fixed item-count cap here previously
         // cut pagination short before reaching old tickets: Desk365 sorts by
         // updated_time descending across ALL tickets (including Closed/Resolved ones,
-        // which only get filtered out during the cache merge below), so a tenant with
+        // which only get filtered out during the merge above), so a tenant with
         // enough ticket volume could push genuinely old-but-unresolved tickets past a
         // fixed cap without ever fetching the page they're on. 20,000 is a
         // runaway-loop backstop only (Desk365's documented rate limit is 10,000
         // tickets/hour, so hitting this would already mean the API is behaving
         // unexpectedly), not a real ceiling on ticket count.
-        if count == 0 || all_tickets.len() >= 20_000 {
+        if count == 0 || total_fetched >= 20_000 {
             break;
         }
 
         offset += count;
-        tokio::time::sleep(Duration::from_millis(600)).await;
+        tokio::time::sleep(Duration::from_millis(DESK365_REQUEST_INTERVAL_MS)).await;
     }
 
-    let normalized: Vec<Value> = all_tickets
-        .iter()
-        .map(|ticket| {
-            let get_field = |keys: &[&str]| -> Value {
-                keys.iter()
-                    .find_map(|key| ticket.get(*key).filter(|v| !v.is_null()))
-                    .cloned()
-                    .unwrap_or(Value::Null)
-            };
-
-            json!({
-                // "id" is only a last-resort fallback (used last in this list) for
-                // tenants whose API response doesn't expose a dedicated ticket-number
-                // field; this display value also builds the Desk365 deep link
-                // (tickets.js), so a tenant where "id" is an unrelated internal key
-                // would show/link the wrong identifier here with no way to detect it.
-                "TicketNumber": match get_field(&["TicketNumber", "ticket_number", "ticketNumber", "id"]) {
-                    Value::Number(n) => Value::String(n.to_string()),
-                    v => v,
-                },
-                "TicketId": get_field(&["ticket_id", "TicketId", "id", "ticket_number", "TicketNumber"]),
-                "Subject": get_field(&["Subject", "subject", "title"]),
-                "Status": get_field(&["Status", "status", "ticket_status"]),
-                "Priority": get_field(&["Priority", "priority"]),
-                "Agent": get_field(&["Agent", "agent", "assigned_to", "assignee"]),
-                "Category": get_field(&["Category", "category"]),
-                "CreatedAt": normalize_ticket_timestamp(get_field(&["CreatedAt", "created_time", "created_at"])),
-                "UpdatedAt": normalize_ticket_timestamp(get_field(&["UpdatedAt", "updated_time", "updated_at"])),
-            })
-        })
-        .collect();
-
-    // Merge this fetch's tickets into the cache instead of just replacing it: on a
-    // full sync the starting point is empty, so only tickets Desk365 actually
-    // returned (and aren't Closed/Resolved) survive — that's what makes a full sync
-    // authoritative for deletions too. On an incremental sync the starting point is
-    // the existing cache, so tickets outside this fetch's `updated_since` window (the
-    // ones that haven't changed) are left untouched rather than dropped, while any
-    // ticket in this batch that has since moved to Closed/Resolved gets evicted right
-    // here — not filtered out beforehand — otherwise we'd never learn it left the
-    // open set and it would stay cached as open forever.
-    let mut merged: BTreeMap<String, Value> = if do_full {
-        BTreeMap::new()
-    } else {
-        cache
-            .tickets
-            .iter()
-            .filter_map(|ticket| ticket_cache_key(ticket).map(|key| (key, ticket.clone())))
-            .collect()
-    };
-
-    for ticket in normalized {
-        let Some(key) = ticket_cache_key(&ticket) else {
-            continue;
-        };
-        let status = ticket.get("Status").and_then(Value::as_str).unwrap_or("");
-        if matches!(status, "Closed" | "Resolved" | "closed" | "resolved") {
-            merged.remove(&key);
-        } else {
-            merged.insert(key, ticket);
+    if let Some(error_message) = sync_error {
+        let interrupted_note = format!(
+            "Desk365 sync interrupted after {page_count} page(s) ({total_fetched} tickets checked): {error_message}."
+        );
+        if do_full {
+            // A full sync's partial result is a strict SUBSET of what's actually
+            // open — persisting or displaying it as final would make every
+            // not-yet-reached ticket vanish. Revert to the last known-good cache and
+            // let the next due full sync retry; last_full_sync_secs stays untouched
+            // so that retry isn't pushed back by a week.
+            emit_ticket_progress(&app, cache.tickets.clone(), total_fetched, total_known, true);
+            return Ok(CommandResponse::ok(json!({
+                "tickets": cache.tickets,
+                "total": cache.tickets.len(),
+                "partial": true,
+                "message": format!("{interrupted_note} Showing the last synced ticket list."),
+            })));
         }
+
+        // An incremental sync starts from the existing cache, so a partial merge only
+        // ever adds/evicts entries actually seen in this batch — safe to persist.
+        // last_sync_secs is deliberately left alone so the next incremental poll
+        // re-covers the same `updated_since` window instead of skipping past whatever
+        // this attempt didn't reach.
+        let merged_tickets: Vec<Value> = merged.into_values().collect();
+        cache.tickets = merged_tickets.clone();
+        if let Err(err) = write_json_file(&cache_path, &cache) {
+            return Ok(CommandResponse::err(&err.code, err.message));
+        }
+        emit_ticket_progress(&app, merged_tickets.clone(), total_fetched, total_known, true);
+        return Ok(CommandResponse::ok(json!({
+            "tickets": merged_tickets,
+            "total": merged_tickets.len(),
+            "partial": true,
+            "message": format!("{interrupted_note} Will retry on the next refresh."),
+        })));
     }
 
     let merged_tickets: Vec<Value> = merged.into_values().collect();
@@ -3322,6 +3442,8 @@ async fn fetch_tickets(
     if let Err(err) = write_json_file(&cache_path, &cache) {
         return Ok(CommandResponse::err(&err.code, err.message));
     }
+
+    emit_ticket_progress(&app, merged_tickets.clone(), total_fetched, total_known, true);
 
     Ok(CommandResponse::ok(json!({
         "tickets": merged_tickets,
@@ -3492,6 +3614,82 @@ fn write_archive_snapshot(
     }
 
     CommandResponse::ok(())
+}
+
+/// User-initiated export of tasks + notes to a location the user picks. Desk365
+/// tickets are deliberately excluded: ticket content is always re-fetched live from
+/// Desk365, so there's nothing owned/authored to back up there.
+#[tauri::command]
+async fn export_backup(
+    state: State<'_, AppState>,
+    app: AppHandle,
+) -> Result<CommandResponse<Option<String>>, ()> {
+    use tauri_plugin_dialog::DialogExt;
+
+    let default_name = format!(
+        "tasktracker-backup-{}.json",
+        current_iso_timestamp()
+            .replace(':', "-")
+            .chars()
+            .take(19) // drop milliseconds and Z
+            .collect::<String>()
+    );
+
+    let (tx, rx) = tokio::sync::oneshot::channel();
+    app.dialog()
+        .file()
+        .set_title("Export Backup")
+        .set_file_name(&default_name)
+        .add_filter("JSON", &["json"])
+        .save_file(move |file| {
+            let _ = tx.send(file);
+        });
+
+    let destination = match rx.await {
+        Ok(Some(path)) => path,
+        Ok(None) => return Ok(CommandResponse::ok(None)),
+        Err(err) => return Ok(CommandResponse::err("dialog_error", err.to_string())),
+    };
+    let dest_path = match destination.clone().into_path() {
+        Ok(p) => p,
+        Err(_) => PathBuf::from(normalize_path_value(&destination.to_string())),
+    };
+
+    let (settings, gcs) = {
+        let s = state.local_settings.lock().unwrap().clone();
+        let g = state.gcs_client.lock().unwrap().clone();
+        (s, g)
+    };
+
+    let tasks_doc = match if let Some(client) = &gcs {
+        gcs_read_tasks(client).await
+    } else {
+        read_tasks_document(&settings, &app)
+    } {
+        Ok(doc) => doc,
+        Err(err) => return Ok(CommandResponse::err(&err.code, err.message)),
+    };
+
+    let notes_doc = match if let Some(client) = &gcs {
+        gcs_read_notes(client).await
+    } else {
+        read_notes_document(&settings, &app)
+    } {
+        Ok(doc) => doc,
+        Err(err) => return Ok(CommandResponse::err(&err.code, err.message)),
+    };
+
+    let bundle = json!({
+        "exportedAt": current_iso_timestamp(),
+        "tasks": tasks_doc,
+        "notes": notes_doc,
+    });
+
+    if let Err(err) = write_json_file(&dest_path, &bundle) {
+        return Ok(CommandResponse::err(&err.code, err.message));
+    }
+
+    Ok(CommandResponse::ok(Some(dest_path.to_string_lossy().to_string())))
 }
 
 #[tauri::command]
@@ -3754,6 +3952,7 @@ fn main() {
             window_minimize,
             mark_renderer_ready,
             quit_app,
+            get_always_on_top,
             toggle_always_on_top,
             open_external_url,
             fetch_tickets,
@@ -3762,6 +3961,7 @@ fn main() {
             close_quick_add,
             pick_sync_folder,
             write_archive_snapshot,
+            export_backup,
             test_gcs_connection,
             migrate_to_gcs,
         ])
