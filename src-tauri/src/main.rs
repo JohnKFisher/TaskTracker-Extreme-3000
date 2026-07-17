@@ -3274,8 +3274,13 @@ async fn fetch_tickets(
                 "Priority": get_field(&["Priority", "priority"]),
                 "Agent": get_field(&["Agent", "agent", "assigned_to", "assignee"]),
                 "Category": get_field(&["Category", "category"]),
-                "CreatedAt": normalize_ticket_timestamp(get_field(&["CreatedAt", "created_time", "created_at"])),
-                "UpdatedAt": normalize_ticket_timestamp(get_field(&["UpdatedAt", "updated_time", "updated_at"])),
+                // Confirmed via a live Desk365 v3 response: the ticket-list endpoint's
+                // actual field names are "created_on"/"updated_on" — not the
+                // "created_time"/"updated_time" query-parameter names the docs use for
+                // order_by, nor any of the other candidates below. Kept as fallbacks in
+                // case another tenant/API version genuinely differs.
+                "CreatedAt": normalize_ticket_timestamp(get_field(&["created_on", "CreatedAt", "created_time", "created_at"])),
+                "UpdatedAt": normalize_ticket_timestamp(get_field(&["updated_on", "UpdatedAt", "updated_time", "updated_at"])),
             })
         })
         .collect();
