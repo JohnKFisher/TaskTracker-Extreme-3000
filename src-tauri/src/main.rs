@@ -2144,6 +2144,7 @@ fn save_window_state(window: &tauri::WebviewWindow) {
             "y": pos.y,
             "width": size.width,
             "height": size.height,
+            "alwaysOnTop": window.is_always_on_top().unwrap_or(true),
         });
         let _ = write_json_file(&path, &data);
     }
@@ -2232,6 +2233,10 @@ fn restore_window_state(app: &AppHandle) {
         place_main_window_on_sidebar_edge(&window);
         return;
     };
+
+    if let Some(always_on_top) = state.get("alwaysOnTop").and_then(Value::as_bool) {
+        let _ = window.set_always_on_top(always_on_top);
+    }
 
     if let (Some(x), Some(y), Some(w), Some(h)) = (
         state.get("x").and_then(Value::as_i64),
@@ -3042,10 +3047,20 @@ fn quit_app(app: AppHandle) -> CommandResponse<()> {
 }
 
 #[tauri::command]
+fn get_always_on_top(window: tauri::WebviewWindow) -> CommandResponse<bool> {
+    CommandResponse::ok(window.is_always_on_top().unwrap_or(true))
+}
+
+#[tauri::command]
 fn toggle_always_on_top(window: tauri::WebviewWindow) -> CommandResponse<bool> {
     let current = window.is_always_on_top().unwrap_or(true);
     match window.set_always_on_top(!current) {
-        Ok(_) => CommandResponse::ok(!current),
+        Ok(_) => {
+            // Toggling doesn't move or resize the window, so without an explicit save
+            // here the new pin state would only persist on the next drag/resize/quit.
+            save_window_state(&window);
+            CommandResponse::ok(!current)
+        }
         Err(err) => CommandResponse::err("window_error", err.to_string()),
     }
 }
@@ -3759,6 +3774,7 @@ fn main() {
             window_minimize,
             mark_renderer_ready,
             quit_app,
+            get_always_on_top,
             toggle_always_on_top,
             open_external_url,
             fetch_tickets,
