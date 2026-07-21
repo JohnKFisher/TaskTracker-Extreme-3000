@@ -3143,17 +3143,51 @@ fn normalize_ticket(ticket: &Value) -> Value {
     })
 }
 
-// Upserts an open ticket, or evicts one that has moved to Closed/Resolved — the
-// latter only happens here (not as an upfront filter) so a ticket that was already
-// cached as open and has since closed gets correctly dropped instead of lingering
-// forever, and so this same function works for both a full-sync's empty starting
-// map and an incremental sync's existing-cache starting map.
-fn merge_ticket_into(merged: &mut BTreeMap<String, Value>, ticket: Value) {
+// True when Desk365 reports a ticket as deleted / moved to the Trash. Trashing is
+// separate from status in Desk365: a trashed ticket keeps whatever status it had
+// (Open, Pending, …) and is flagged deleted alongside it, so a status check alone
+// never catches it. The raw payload is inspected (not the normalized ticket) because
+// normalize_ticket only keeps the display fields and drops the deletion flag. Field
+// names aren't guaranteed by the public docs, so several known/likely spellings are
+// accepted, plus the rare case where a tenant surfaces trash through the status field
+// itself — none of which a genuinely open ticket would ever carry.
+fn ticket_is_trashed(raw: &Value) -> bool {
+    let flag_is_true = |value: Option<&Value>| match value {
+        Some(Value::Bool(b)) => *b,
+        Some(Value::Number(n)) => n.as_i64().map(|i| i != 0).unwrap_or(false),
+        Some(Value::String(s)) => matches!(s.trim().to_ascii_lowercase().as_str(), "true" | "1" | "yes"),
+        _ => false,
+    };
+
+    if ["deleted", "is_deleted", "isDeleted", "trashed", "is_trashed", "in_trash"]
+        .iter()
+        .any(|key| flag_is_true(raw.get(*key)))
+    {
+        return true;
+    }
+
+    raw.get("status")
+        .or_else(|| raw.get("Status"))
+        .or_else(|| raw.get("ticket_status"))
+        .and_then(Value::as_str)
+        .map(|s| matches!(s.trim().to_ascii_lowercase().as_str(), "deleted" | "trash" | "trashed"))
+        .unwrap_or(false)
+}
+
+// Upserts an open ticket, or evicts one that has moved to Closed/Resolved or been
+// deleted (moved to Desk365's Trash) — eviction only happens here (not as an upfront
+// filter) so a ticket that was already cached as open and has since closed or been
+// trashed gets correctly dropped instead of lingering forever, and so this same
+// function works for both a full-sync's empty starting map and an incremental sync's
+// existing-cache starting map. `trashed` is derived from the raw payload by the caller
+// (see ticket_is_trashed) since normalize_ticket discards the deletion flag.
+fn merge_ticket_into(merged: &mut BTreeMap<String, Value>, ticket: Value, trashed: bool) {
     let Some(key) = ticket_cache_key(&ticket) else {
         return;
     };
     let status = ticket.get("Status").and_then(Value::as_str).unwrap_or("");
-    if matches!(status, "Closed" | "Resolved" | "closed" | "resolved") {
+    let closed = matches!(status, "Closed" | "Resolved" | "closed" | "resolved");
+    if trashed || closed {
         merged.remove(&key);
     } else {
         merged.insert(key, ticket);
@@ -3365,7 +3399,7 @@ async fn fetch_tickets(
         total_fetched += count;
         page_count += 1;
         for raw in &raw_tickets {
-            merge_ticket_into(&mut merged, normalize_ticket(raw));
+            merge_ticket_into(&mut merged, normalize_ticket(raw), ticket_is_trashed(raw));
         }
 
         emit_ticket_progress(
@@ -3975,9 +4009,11 @@ mod tests {
         compare_timestamps, compute_storage_status_from_local_dir, copy_shared_data_from_source,
         default_task_board, generate_device_id, hidden_ticket_schema_version, is_valid_gcs_bucket_name,
         is_valid_hostname, merge_hidden_tickets_documents, merge_missing_sync_folder,
-        merge_task_documents, migrate_legacy_secret_value, normalize_hidden_tickets_document,
+        merge_task_documents, merge_ticket_into, migrate_legacy_secret_value,
+        normalize_hidden_tickets_document,
         normalize_local_settings, normalize_path_value, normalize_task_document, normalize_task_orders,
-        normalize_ticket_timestamp, parse_hidden_tickets_document_content,
+        normalize_ticket, normalize_ticket_timestamp, parse_hidden_tickets_document_content,
+        ticket_is_trashed,
         parse_task_document_content, parse_task_item_value, semver_tuple, AppError,
         CredentialStore, HiddenTicketState, HiddenTicketsDocument, LocalSettings, TaskDocument,
         TaskItem,
@@ -4152,6 +4188,63 @@ mod tests {
             normalize_ticket_timestamp(json!(1_767_225_600_000u64)),
             json!("2026-01-01T00:00:00.000Z")
         );
+    }
+
+    #[test]
+    fn detects_trashed_tickets_across_flag_spellings() {
+        // Boolean deletion flags in the various spellings the API might use.
+        assert!(ticket_is_trashed(&json!({"status": "Open", "deleted": true})));
+        assert!(ticket_is_trashed(&json!({"status": "Pending", "is_deleted": true})));
+        assert!(ticket_is_trashed(&json!({"status": "Open", "trashed": true})));
+        assert!(ticket_is_trashed(&json!({"status": "Open", "in_trash": true})));
+        // Non-boolean truthy encodings (1 / "true" / "yes").
+        assert!(ticket_is_trashed(&json!({"deleted": 1})));
+        assert!(ticket_is_trashed(&json!({"deleted": "true"})));
+        // Trash surfaced through the status field itself.
+        assert!(ticket_is_trashed(&json!({"status": "Deleted"})));
+        assert!(ticket_is_trashed(&json!({"status": "trash"})));
+
+        // A genuinely open/active ticket is never treated as trashed.
+        assert!(!ticket_is_trashed(&json!({"status": "Open"})));
+        assert!(!ticket_is_trashed(&json!({"status": "Pending", "deleted": false})));
+        assert!(!ticket_is_trashed(&json!({"status": "Resolved", "deleted": 0})));
+        assert!(!ticket_is_trashed(&json!({"Status": "Closed"})));
+    }
+
+    #[test]
+    fn merge_evicts_trashed_ticket_already_in_cache() {
+        // Simulate an incremental sync: the ticket is already cached as open, then
+        // comes back from Desk365 flagged as trashed. It must be dropped, not kept.
+        let mut merged: std::collections::BTreeMap<String, serde_json::Value> =
+            std::collections::BTreeMap::new();
+        let raw_open = json!({"TicketNumber": "1001", "status": "Open"});
+        merge_ticket_into(&mut merged, normalize_ticket(&raw_open), ticket_is_trashed(&raw_open));
+        assert!(merged.contains_key("1001"));
+
+        let raw_trashed = json!({"TicketNumber": "1001", "status": "Open", "deleted": true});
+        merge_ticket_into(
+            &mut merged,
+            normalize_ticket(&raw_trashed),
+            ticket_is_trashed(&raw_trashed),
+        );
+        assert!(
+            !merged.contains_key("1001"),
+            "a trashed ticket should be evicted from the cache on sync"
+        );
+    }
+
+    #[test]
+    fn merge_keeps_open_ticket_and_still_evicts_closed() {
+        let mut merged: std::collections::BTreeMap<String, serde_json::Value> =
+            std::collections::BTreeMap::new();
+        let open = json!({"TicketNumber": "2001", "status": "Open"});
+        merge_ticket_into(&mut merged, normalize_ticket(&open), ticket_is_trashed(&open));
+        assert!(merged.contains_key("2001"));
+
+        // Existing Closed/Resolved eviction behavior is unchanged.
+        let closed = json!({"TicketNumber": "2001", "status": "Closed"});
+        merge_ticket_into(&mut merged, normalize_ticket(&closed), ticket_is_trashed(&closed));
+        assert!(!merged.contains_key("2001"));
     }
 
     #[test]
