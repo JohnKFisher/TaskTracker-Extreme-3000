@@ -250,18 +250,20 @@ async function toggleHideTicket(ticketNumber) {
       },
     });
     applyHiddenTicketDocument(result.document);
-    renderTickets();
   } catch (error) {
     ticketsStatus.textContent = error.message || 'Could not save hidden ticket state.';
     try {
       const hiddenData = await window.callCommand('load_hidden_tickets');
       applyHiddenTicketDocument(hiddenData);
-      renderTickets();
     } catch (reloadError) {
       console.error('Failed to restore hidden ticket state after save error:', reloadError);
     }
   } finally {
+    // Clear the in-flight flag before re-rendering: the hide buttons' disabled
+    // state is derived from it, so rendering while it is still true would leave
+    // every hide button grayed out until the next unrelated re-render.
     hiddenTicketSaveInFlight = false;
+    renderTickets();
   }
 }
 
