@@ -3089,6 +3089,8 @@ struct TicketCacheDocument {
     last_sync_secs: Option<u64>,
     #[serde(default)]
     last_full_sync_secs: Option<u64>,
+    #[serde(default)]
+    last_reconcile_secs: Option<u64>,
 }
 
 const ONE_WEEK_SECS: u64 = 7 * 24 * 60 * 60;
@@ -3097,6 +3099,21 @@ const ONE_WEEK_SECS: u64 = 7 * 24 * 60 * 60;
 // ticket updated right at the edge of the window is simply re-fetched and merged
 // again rather than possibly missed.
 const INCREMENTAL_LOOKBACK_BUFFER_SECS: u64 = 15 * 60;
+
+// How often to run a bounded reconcile, and how many of the most-recently-updated
+// tickets it re-lists. Deleting a ticket in Desk365 moves it to a Trash folder that
+// the ticket-list endpoint doesn't return at all — no deletion flag comes back on a
+// ticket that's already gone — so the only way to notice is that Desk365 stopped
+// listing it. An incremental sync can't: it merges what it's given and has no basis
+// for concluding anything about a ticket the response simply omits. A bounded
+// reconcile drops the `updated_since` filter and re-lists the newest slice of the
+// tenant's tickets, which makes absence from that slice meaningful (see
+// evict_tickets_missing_from_reconcile). Two hours / 200 tickets keeps this to ~2
+// extra requests per pass while covering the tickets a deletion realistically
+// touches; the unbounded weekly (or manual-refresh) full sync remains the backstop
+// for anything older than the slice.
+const TICKET_RECONCILE_INTERVAL_SECS: u64 = 2 * 60 * 60;
+const RECONCILE_TICKET_LIMIT: usize = 200;
 
 // Tickets are keyed by TicketNumber (falling back to TicketId) for cache merging,
 // matching how the frontend already identifies tickets for hiding/notifications.
@@ -3143,14 +3160,115 @@ fn normalize_ticket(ticket: &Value) -> Value {
     })
 }
 
-// True when Desk365 reports a ticket as deleted / moved to the Trash. Trashing is
-// separate from status in Desk365: a trashed ticket keeps whatever status it had
-// (Open, Pending, …) and is flagged deleted alongside it, so a status check alone
-// never catches it. The raw payload is inspected (not the normalized ticket) because
-// normalize_ticket only keeps the display fields and drops the deletion flag. Field
-// names aren't guaranteed by the public docs, so several known/likely spellings are
-// accepted, plus the rare case where a tenant surfaces trash through the status field
-// itself — none of which a genuinely open ticket would ever carry.
+// Splits a Desk365 timestamp into its numeric year/month/day/hour/minute/second
+// components so two of them can be ordered without assuming a single string format.
+// Ticket timestamps reach the cache in whichever shape the tenant's API returned —
+// "2026-07-01 09:30:00" passes through as-is, while a numeric epoch is rewritten as
+// "2026-07-01T09:30:00.000Z" (see normalize_ticket_timestamp) — and a plain string
+// comparison across those two shapes is wrong, because ' ' and 'T' sort differently.
+// Comparing the extracted components sidesteps the format entirely. Returns None for
+// anything without at least a year-month-day, so callers can treat it as unknown
+// rather than guessing an order.
+fn ticket_timestamp_parts(value: &str) -> Option<Vec<u64>> {
+    let mut parts: Vec<u64> = Vec::new();
+    let mut current: Option<u64> = None;
+    for ch in value.chars() {
+        match ch.to_digit(10) {
+            Some(digit) => {
+                let next = current.unwrap_or(0).saturating_mul(10).saturating_add(digit as u64);
+                current = Some(next);
+            }
+            None => {
+                if let Some(number) = current.take() {
+                    parts.push(number);
+                }
+            }
+        }
+        // Only the six calendar components are significant; trailing fractional
+        // seconds and timezone digits would otherwise break equality between the two
+        // formats above ("…:00.000Z" vs "…:00").
+        if parts.len() == 6 {
+            break;
+        }
+    }
+    if parts.len() < 6 {
+        if let Some(number) = current.take() {
+            parts.push(number);
+        }
+    }
+    if parts.len() < 3 {
+        return None;
+    }
+    Some(parts)
+}
+
+// True when `value` is at or after `floor`, or None if either timestamp can't be
+// understood well enough to say.
+fn ticket_timestamp_at_or_after(value: Option<&str>, floor: &str) -> Option<bool> {
+    let left = ticket_timestamp_parts(value?)?;
+    let right = ticket_timestamp_parts(floor)?;
+    Some(left >= right)
+}
+
+// Removes cached tickets that a bounded reconcile proves Desk365 no longer lists —
+// which, since deleted tickets vanish from the list rather than coming back flagged,
+// is how a ticket moved to the Trash finally leaves the app.
+//
+// The reconcile fetches tickets ordered by updated_time descending with no
+// `updated_since` filter, so the tickets it saw are exactly the newest
+// `RECONCILE_TICKET_LIMIT` in the tenant. That makes one inference sound: if a cached
+// ticket's own UpdatedAt is at or after the oldest UpdatedAt the reconcile saw, then
+// Desk365 would have had to return it — its live updated_on can only be that value or
+// newer, either of which falls inside the slice — so its absence means it is no longer
+// in the list at all. Cached tickets older than the slice are left alone, because the
+// reconcile simply never looked that far back; the weekly full sync covers those.
+// `reached_end_of_list` means the reconcile paged all the way to an empty page instead
+// of stopping at the limit, so the slice was the entire tenant and every absence
+// counts. Tickets with a missing or unparseable UpdatedAt are always kept: silently
+// dropping a ticket the user can still see in Desk365 is worse than keeping a deleted
+// one an extra week.
+fn evict_tickets_missing_from_reconcile(
+    merged: &mut BTreeMap<String, Value>,
+    seen_keys: &BTreeSet<String>,
+    oldest_seen_updated: Option<&str>,
+    reached_end_of_list: bool,
+) -> usize {
+    // A reconcile that came back with no tickets at all proves nothing: an empty
+    // unfiltered listing is indistinguishable from a tenant that briefly returned
+    // nothing, and acting on it would clear the whole panel every two hours instead of
+    // once on the weekly full sync. Leave that judgement to the full sync.
+    if seen_keys.is_empty() {
+        return 0;
+    }
+
+    let before = merged.len();
+    merged.retain(|key, ticket| {
+        if seen_keys.contains(key) {
+            return true;
+        }
+        if reached_end_of_list {
+            return false;
+        }
+        let Some(floor) = oldest_seen_updated else {
+            return true;
+        };
+        let updated = ticket.get("UpdatedAt").and_then(Value::as_str);
+        !ticket_timestamp_at_or_after(updated, floor).unwrap_or(false)
+    });
+    before.saturating_sub(merged.len())
+}
+
+// True when Desk365 reports a ticket as deleted / moved to the Trash *in a payload it
+// still returns*. This is belt-and-braces only: the observed behavior is that a
+// deleted ticket disappears from the ticket-list endpoint entirely rather than coming
+// back carrying a deletion flag, which is why removing trashed tickets actually
+// depends on evict_tickets_missing_from_reconcile above and not on this check. It is
+// kept for the tenant or API version that does surface a flag inline, where it evicts
+// on the spot instead of waiting for the next reconcile. The raw payload is inspected
+// (not the normalized ticket) because normalize_ticket only keeps the display fields.
+// Field names aren't guaranteed by the public docs, so several known/likely spellings
+// are accepted, plus the rare case where a tenant surfaces trash through the status
+// field itself — none of which a genuinely open ticket would ever carry.
 fn ticket_is_trashed(raw: &Value) -> bool {
     let flag_is_true = |value: Option<&Value>| match value {
         Some(Value::Bool(b)) => *b,
@@ -3307,7 +3425,17 @@ async fn fetch_tickets(
     };
     let do_full = force_full || full_sync_due;
 
-    let updated_since = if do_full {
+    // Otherwise, a bounded reconcile is due every couple of hours: same unfiltered
+    // listing as a full sync but stopping after the newest RECONCILE_TICKET_LIMIT
+    // tickets, which is what lets tickets deleted in Desk365 be detected by their
+    // absence without paginating the whole tenant. Every other poll stays incremental.
+    let reconcile_due = match cache.last_reconcile_secs {
+        Some(last) => now_secs.saturating_sub(last) >= TICKET_RECONCILE_INTERVAL_SECS,
+        None => true,
+    };
+    let do_reconcile = !do_full && reconcile_due;
+
+    let updated_since = if do_full || do_reconcile {
         None
     } else {
         cache.last_sync_secs.map(|secs| {
@@ -3326,7 +3454,9 @@ async fn fetch_tickets(
     // returned (and aren't Closed/Resolved) survive — that's what makes a full sync
     // authoritative for deletions too. On an incremental sync the starting point is
     // the existing cache, so tickets outside this fetch's `updated_since` window (the
-    // ones that haven't changed) are left untouched rather than dropped.
+    // ones that haven't changed) are left untouched rather than dropped. A bounded
+    // reconcile also starts from the cache — it deliberately doesn't page far enough
+    // back to rebuild it — and instead prunes it afterwards from what it did see.
     let mut merged: BTreeMap<String, Value> = if do_full {
         BTreeMap::new()
     } else {
@@ -3336,6 +3466,14 @@ async fn fetch_tickets(
             .filter_map(|ticket| ticket_cache_key(ticket).map(|key| (key, ticket.clone())))
             .collect()
     };
+
+    // Reconcile bookkeeping: which tickets this fetch saw, and the oldest UpdatedAt
+    // among them, which together bound what its absences are allowed to prove. Every
+    // returned ticket counts toward the floor, including the Closed/Resolved ones the
+    // merge drops, since Desk365's descending updated_time ordering spans all statuses.
+    let mut seen_keys: BTreeSet<String> = BTreeSet::new();
+    let mut oldest_seen_updated: Option<String> = None;
+    let mut reached_end_of_list = false;
 
     // Any page-request failure (network hiccup, or Desk365's 429 rate limit) breaks
     // out here instead of aborting the whole command: whatever was already merged
@@ -3399,7 +3537,30 @@ async fn fetch_tickets(
         total_fetched += count;
         page_count += 1;
         for raw in &raw_tickets {
-            merge_ticket_into(&mut merged, normalize_ticket(raw), ticket_is_trashed(raw));
+            let ticket = normalize_ticket(raw);
+            if let Some(key) = ticket_cache_key(&ticket) {
+                seen_keys.insert(key);
+            }
+            // Track the oldest UpdatedAt seen, ignoring any timestamp that can't be
+            // parsed: the floor decides which cached tickets a reconcile is allowed to
+            // evict, so seeding it with a value nothing can be compared against would
+            // quietly disable the eviction rather than tighten it.
+            if let Some(updated) = ticket
+                .get("UpdatedAt")
+                .and_then(Value::as_str)
+                .filter(|value| ticket_timestamp_parts(value).is_some())
+            {
+                let is_older = match oldest_seen_updated.as_deref() {
+                    Some(current) => {
+                        ticket_timestamp_at_or_after(Some(updated), current) == Some(false)
+                    }
+                    None => true,
+                };
+                if is_older {
+                    oldest_seen_updated = Some(updated.to_string());
+                }
+            }
+            merge_ticket_into(&mut merged, ticket, ticket_is_trashed(raw));
         }
 
         emit_ticket_progress(
@@ -3419,7 +3580,20 @@ async fn fetch_tickets(
         // runaway-loop backstop only (Desk365's documented rate limit is 10,000
         // tickets/hour, so hitting this would already mean the API is behaving
         // unexpectedly), not a real ceiling on ticket count.
-        if count == 0 || total_fetched >= 20_000 {
+        //
+        // An empty page additionally means the listing was exhausted, which a bounded
+        // reconcile needs to know: having seen the tenant's entire list, it can treat
+        // any cached ticket it didn't see as deleted regardless of age.
+        if count == 0 {
+            reached_end_of_list = true;
+            break;
+        }
+        let fetch_limit = if do_reconcile {
+            RECONCILE_TICKET_LIMIT
+        } else {
+            20_000
+        };
+        if total_fetched >= fetch_limit {
             break;
         }
 
@@ -3446,11 +3620,13 @@ async fn fetch_tickets(
             })));
         }
 
-        // An incremental sync starts from the existing cache, so a partial merge only
-        // ever adds/evicts entries actually seen in this batch — safe to persist.
-        // last_sync_secs is deliberately left alone so the next incremental poll
-        // re-covers the same `updated_since` window instead of skipping past whatever
-        // this attempt didn't reach.
+        // An incremental sync (or a bounded reconcile) starts from the existing cache,
+        // so a partial merge only ever adds/evicts entries actually seen in this batch
+        // — safe to persist. An interrupted reconcile skips its absence-based eviction
+        // entirely by returning here, and leaves last_reconcile_secs untouched so the
+        // next poll retries it. last_sync_secs is likewise deliberately left alone so
+        // the next incremental poll re-covers the same `updated_since` window instead
+        // of skipping past whatever this attempt didn't reach.
         let merged_tickets: Vec<Value> = merged.into_values().collect();
         cache.tickets = merged_tickets.clone();
         if let Err(err) = write_json_file(&cache_path, &cache) {
@@ -3465,12 +3641,30 @@ async fn fetch_tickets(
         })));
     }
 
+    // Only a fetch that completed without interruption can conclude anything from a
+    // ticket's absence — a partial one returns early above, since a ticket it never
+    // paged to would look identical to a deleted one.
+    if do_reconcile {
+        evict_tickets_missing_from_reconcile(
+            &mut merged,
+            &seen_keys,
+            oldest_seen_updated.as_deref(),
+            reached_end_of_list,
+        );
+    }
+
     let merged_tickets: Vec<Value> = merged.into_values().collect();
 
     cache.tickets = merged_tickets.clone();
     cache.last_sync_secs = Some(now_secs);
+    if do_reconcile {
+        cache.last_reconcile_secs = Some(now_secs);
+    }
     if do_full {
         cache.last_full_sync_secs = Some(now_secs);
+        // A full sync is a superset of a reconcile, so it restarts the two-hour clock
+        // rather than leaving a reconcile queued up right behind it.
+        cache.last_reconcile_secs = Some(now_secs);
     }
 
     if let Err(err) = write_json_file(&cache_path, &cache) {
@@ -4007,13 +4201,14 @@ fn main() {
 mod tests {
     use super::{
         compare_timestamps, compute_storage_status_from_local_dir, copy_shared_data_from_source,
-        default_task_board, generate_device_id, hidden_ticket_schema_version, is_valid_gcs_bucket_name,
+        default_task_board, evict_tickets_missing_from_reconcile, generate_device_id,
+        hidden_ticket_schema_version, is_valid_gcs_bucket_name,
         is_valid_hostname, merge_hidden_tickets_documents, merge_missing_sync_folder,
         merge_task_documents, merge_ticket_into, migrate_legacy_secret_value,
         normalize_hidden_tickets_document,
         normalize_local_settings, normalize_path_value, normalize_task_document, normalize_task_orders,
         normalize_ticket, normalize_ticket_timestamp, parse_hidden_tickets_document_content,
-        ticket_is_trashed,
+        ticket_is_trashed, ticket_timestamp_at_or_after, ticket_timestamp_parts,
         parse_task_document_content, parse_task_item_value, semver_tuple, AppError,
         CredentialStore, HiddenTicketState, HiddenTicketsDocument, LocalSettings, TaskDocument,
         TaskItem,
@@ -4245,6 +4440,150 @@ mod tests {
         let closed = json!({"TicketNumber": "2001", "status": "Closed"});
         merge_ticket_into(&mut merged, normalize_ticket(&closed), ticket_is_trashed(&closed));
         assert!(!merged.contains_key("2001"));
+    }
+
+    // Builds the cache map a reconcile starts from.
+    fn ticket_cache_map(tickets: &[(&str, &str)]) -> std::collections::BTreeMap<String, serde_json::Value> {
+        tickets
+            .iter()
+            .map(|(number, updated)| {
+                (
+                    (*number).to_string(),
+                    json!({"TicketNumber": number, "Status": "Open", "UpdatedAt": updated}),
+                )
+            })
+            .collect()
+    }
+
+    fn seen(keys: &[&str]) -> std::collections::BTreeSet<String> {
+        keys.iter().map(|key| (*key).to_string()).collect()
+    }
+
+    #[test]
+    fn compares_ticket_timestamps_across_both_formats() {
+        // The space-separated form Desk365 returns and the ISO form a numeric epoch is
+        // rewritten into must compare equal, which a plain string cmp would get wrong.
+        assert_eq!(
+            ticket_timestamp_parts("2026-07-01 09:30:00"),
+            ticket_timestamp_parts("2026-07-01T09:30:00.000Z")
+        );
+        assert_eq!(
+            ticket_timestamp_at_or_after(Some("2026-07-01T09:30:00.000Z"), "2026-07-01 09:30:00"),
+            Some(true)
+        );
+        assert_eq!(
+            ticket_timestamp_at_or_after(Some("2026-07-01 09:29:59"), "2026-07-01T09:30:00.000Z"),
+            Some(false)
+        );
+        assert_eq!(
+            ticket_timestamp_at_or_after(Some("2026-08-01 00:00:00"), "2026-07-31 23:59:59"),
+            Some(true)
+        );
+
+        // Unusable timestamps report "unknown" rather than a guessed order.
+        assert_eq!(ticket_timestamp_parts(""), None);
+        assert_eq!(ticket_timestamp_parts("not a date"), None);
+        assert_eq!(ticket_timestamp_at_or_after(None, "2026-07-01 09:30:00"), None);
+        assert_eq!(ticket_timestamp_at_or_after(Some(""), "2026-07-01 09:30:00"), None);
+    }
+
+    #[test]
+    fn reconcile_evicts_cached_ticket_desk365_no_longer_lists() {
+        // The deletion case: #1001 was open in the cache, the reconcile re-listed the
+        // newest tickets and #1001 wasn't among them, and its UpdatedAt sits inside the
+        // slice the reconcile covered — so Desk365 would have returned it if it still
+        // listed it. It's in the Trash; drop it.
+        let mut merged = ticket_cache_map(&[
+            ("1001", "2026-08-02 10:00:00"),
+            ("1002", "2026-08-03 08:00:00"),
+        ]);
+        let removed = evict_tickets_missing_from_reconcile(
+            &mut merged,
+            &seen(&["1002"]),
+            Some("2026-08-01 00:00:00"),
+            false,
+        );
+        assert_eq!(removed, 1);
+        assert!(!merged.contains_key("1001"), "a deleted ticket should be evicted");
+        assert!(merged.contains_key("1002"), "a ticket the reconcile saw stays");
+    }
+
+    #[test]
+    fn reconcile_keeps_tickets_older_than_the_slice_it_looked_at() {
+        // #900 predates the oldest ticket the reconcile saw, so the reconcile never
+        // paged back far enough to say anything about it. Only the weekly full sync can.
+        let mut merged = ticket_cache_map(&[("900", "2026-05-01 09:00:00")]);
+        // "1500" stands for a ticket the reconcile saw that isn't cached (a Closed one
+        // the merge drops, say) — the reconcile did return results, it just didn't
+        // reach back as far as #900.
+        let removed = evict_tickets_missing_from_reconcile(
+            &mut merged,
+            &seen(&["1500"]),
+            Some("2026-08-01 00:00:00"),
+            false,
+        );
+        assert_eq!(removed, 0);
+        assert!(merged.contains_key("900"));
+    }
+
+    #[test]
+    fn reconcile_that_returned_nothing_evicts_nothing() {
+        // An empty listing can't be told apart from a tenant that momentarily returned
+        // nothing, so it must never be read as "every cached ticket was deleted" — even
+        // when pagination reached the end.
+        let mut merged = ticket_cache_map(&[("1001", "2026-08-02 10:00:00")]);
+        assert_eq!(
+            evict_tickets_missing_from_reconcile(&mut merged, &seen(&[]), None, true),
+            0
+        );
+        assert!(merged.contains_key("1001"));
+    }
+
+    #[test]
+    fn reconcile_that_reached_the_end_of_the_list_evicts_regardless_of_age() {
+        // Paging to an empty page means the reconcile saw the tenant's whole list, so
+        // even an ancient cached ticket that's missing from it is genuinely gone.
+        let mut merged = ticket_cache_map(&[("900", "2024-01-01 09:00:00"), ("901", "2026-08-03 09:00:00")]);
+        let removed = evict_tickets_missing_from_reconcile(
+            &mut merged,
+            &seen(&["901"]),
+            Some("2026-08-01 00:00:00"),
+            true,
+        );
+        assert_eq!(removed, 1);
+        assert!(!merged.contains_key("900"));
+        assert!(merged.contains_key("901"));
+    }
+
+    #[test]
+    fn reconcile_keeps_tickets_it_cannot_judge() {
+        // No floor (the reconcile returned nothing) and unusable/missing timestamps both
+        // mean "can't tell" — never evict on a guess, or a live ticket vanishes from the
+        // user's panel.
+        let mut merged = ticket_cache_map(&[("1001", "2026-08-02 10:00:00")]);
+        assert_eq!(
+            evict_tickets_missing_from_reconcile(&mut merged, &seen(&["1500"]), None, false),
+            0
+        );
+        assert!(merged.contains_key("1001"));
+
+        let mut undated: std::collections::BTreeMap<String, serde_json::Value> =
+            std::collections::BTreeMap::new();
+        undated.insert("1002".to_string(), json!({"TicketNumber": "1002", "Status": "Open"}));
+        undated.insert(
+            "1003".to_string(),
+            json!({"TicketNumber": "1003", "Status": "Open", "UpdatedAt": serde_json::Value::Null}),
+        );
+        assert_eq!(
+            evict_tickets_missing_from_reconcile(
+                &mut undated,
+                &seen(&["1500"]),
+                Some("2026-08-01 00:00:00"),
+                false,
+            ),
+            0
+        );
+        assert_eq!(undated.len(), 2);
     }
 
     #[test]
