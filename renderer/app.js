@@ -492,10 +492,11 @@ async function performArchiveSnapshot() {
     const tasks = typeof window.getCurrentTasksForArchive === 'function'
       ? window.getCurrentTasksForArchive() : [];
     const notes = typeof window.getCurrentNotesForArchive === 'function'
-      ? window.getCurrentNotesForArchive() : { meetingNotes: '', generalNotes: '' };
+      ? window.getCurrentNotesForArchive() : { meetingNotes: '', shortTermNotes: '', generalNotes: '' };
     await callCommand('write_archive_snapshot', {
       tasks,
       meetingNotes: notes.meetingNotes,
+      shortTermNotes: notes.shortTermNotes,
       generalNotes: notes.generalNotes,
     });
   } catch (error) {

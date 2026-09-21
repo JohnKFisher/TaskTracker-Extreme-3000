@@ -27,6 +27,9 @@ function applyLocalSettings(settings) {
   }
   updateColorThemeToggle(settings.colorTheme || 'auto');
   window.applyColorTheme(settings.colorTheme || 'auto');
+  if (typeof window.applyTicketSort === 'function') {
+    window.applyTicketSort(settings.ticketSort || 'chronological');
+  }
   updateGcsDisplay(settings.gcsCredentialPath || null, settings.gcsBucket || null);
 }
 
@@ -60,6 +63,10 @@ async function saveLocalSettingsPatch(patch) {
   applyLocalSettings(nextSettings);
   return status;
 }
+
+// Exposed so other renderer modules (tickets.js's sort toggle) can persist their own
+// per-machine preference without duplicating the load/merge/save dance.
+window.saveLocalSettingsPatch = saveLocalSettingsPatch;
 
 function updateSyncFolderDisplay(folder) {
   const display = document.getElementById('sync-folder-display');

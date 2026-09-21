@@ -1,12 +1,17 @@
 const meetingArea = document.getElementById('notes-meeting');
+// The Long-Term section is still stored under `generalNotes` — schema v4 relabelled it
+// from "General" without renaming the field, so older builds sharing the same synced
+// notes.json keep reading and writing that text correctly. See NotesDocument in main.rs.
+const shortTermArea = document.getElementById('notes-short-term');
 const generalArea = document.getElementById('notes-general');
 let notesWritable = true;
 let notesDocument = {
-  schemaVersion: 3,
+  schemaVersion: 4,
   revision: 0,
   updatedAt: null,
   updatedBy: null,
   meetingNotes: '',
+  shortTermNotes: '',
   generalNotes: '',
 };
 let notesDirty = false;
@@ -14,12 +19,14 @@ let pendingRemoteReload = false;
 
 function applyNotesDocument(document) {
   notesDocument = {
-    schemaVersion: document.schemaVersion || 3,
+    schemaVersion: document.schemaVersion || 4,
     revision: document.revision || 0,
     updatedAt: document.updatedAt || null,
     updatedBy: document.updatedBy || null,
-    // Rust normalizes legacy `content` into `generalNotes` before returning.
+    // Rust normalizes legacy `content` into `generalNotes` before returning, and a v3
+    // document simply arrives with no `shortTermNotes`.
     meetingNotes: document.meetingNotes || '',
+    shortTermNotes: document.shortTermNotes || '',
     generalNotes: document.generalNotes || '',
   };
 }
@@ -35,11 +42,13 @@ async function loadNotes(options = {}) {
     const data = await window.callCommand('load_notes');
     applyNotesDocument(data);
     meetingArea.value = notesDocument.meetingNotes;
+    shortTermArea.value = notesDocument.shortTermNotes;
     generalArea.value = notesDocument.generalNotes;
     notesDirty = false;
     pendingRemoteReload = false;
   } catch (error) {
     meetingArea.value = '';
+    shortTermArea.value = '';
     generalArea.value = '';
     console.error('Failed to load notes:', error);
     if (!silent) {
@@ -54,11 +63,12 @@ async function doPersistNotes() {
   try {
     const result = await window.callCommand('save_notes', {
       document: {
-        schemaVersion: notesDocument.schemaVersion || 3,
+        schemaVersion: notesDocument.schemaVersion || 4,
         revision: notesDocument.revision || 0,
         updatedAt: new Date().toISOString(),
         content: '',
         meetingNotes: meetingArea.value,
+        shortTermNotes: shortTermArea.value,
         generalNotes: generalArea.value,
       },
     });
@@ -114,6 +124,7 @@ function markNotesDirty() {
 }
 
 meetingArea.addEventListener('input', markNotesDirty);
+shortTermArea.addEventListener('input', markNotesDirty);
 generalArea.addEventListener('input', markNotesDirty);
 
 window.registerSaveHook(persistNotes);
@@ -122,21 +133,22 @@ window.registerSaveHook(persistNotes);
 window.getCurrentNotesForArchive = function getCurrentNotesForArchive() {
   return {
     meetingNotes: meetingArea.value,
+    shortTermNotes: shortTermArea.value,
     generalNotes: generalArea.value,
   };
 };
 
 function setNotesEnabled(enabled) {
-  meetingArea.disabled = !enabled;
-  generalArea.disabled = !enabled;
   const offlinePlaceholder = 'Notes are unavailable until the configured shared-data location is reachable.';
-  if (enabled) {
-    meetingArea.placeholder = 'Notes for your next meeting...';
-    generalArea.placeholder = 'General notes...';
-  } else {
-    meetingArea.placeholder = offlinePlaceholder;
-    generalArea.placeholder = offlinePlaceholder;
-  }
+  const areas = [
+    [meetingArea, 'Notes for your next meeting...'],
+    [shortTermArea, 'Short-term notes...'],
+    [generalArea, 'Long-term notes...'],
+  ];
+  areas.forEach(([area, placeholder]) => {
+    area.disabled = !enabled;
+    area.placeholder = enabled ? placeholder : offlinePlaceholder;
+  });
 }
 
 window.addEventListener('storage-status-changed', (event) => {

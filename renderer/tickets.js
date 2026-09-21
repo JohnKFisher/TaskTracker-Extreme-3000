@@ -33,6 +33,12 @@ const showHiddenCheckbox = document.getElementById('show-hidden-tickets');
 const changeApiKeyBtn = document.getElementById('btn-change-api-key');
 const saveApiKeyBtn = document.getElementById('btn-save-api-key');
 const newTicketBtn = document.getElementById('btn-new-ticket');
+const ticketsSortToggle = document.getElementById('tickets-sort');
+
+// Display order only — the fetched list itself is never reordered, so flipping this
+// re-renders without touching Desk365. Kept in sync with the per-machine
+// `ticketSort` local setting via window.applyTicketSort (called from settings.js).
+let ticketSortMode = 'chronological';
 
 function stopPolling() {
   if (pollTimer) clearInterval(pollTimer);
@@ -120,14 +126,112 @@ async function loadTicketState() {
   document.getElementById('domain-input').value = ticketState.desk365Domain || '';
 }
 
+function normalizeTicketSortMode(mode) {
+  return mode === 'alphabetical' ? 'alphabetical' : 'chronological';
+}
+
+function ticketNumberValue(ticket) {
+  const parsed = parseInt(ticket.TicketNumber, 10);
+  return Number.isNaN(parsed) ? 0 : parsed;
+}
+
+// Desk365 timestamps reach us in whichever shape the tenant's API returned (see
+// normalize_ticket in main.rs), so CreatedAt is not guaranteed to be parseable.
+// Ticket numbers increase over time, so they stand in as the chronological key
+// whenever any ticket's date is unusable, and as the tie-break in both modes.
+function ticketCreatedValue(ticket) {
+  const parsed = Date.parse(ticket.CreatedAt);
+  return Number.isNaN(parsed) ? null : parsed;
+}
+
+// The date-vs-number choice is made once for the whole list rather than per pair:
+// mixing the two keys inside one comparator can make it non-transitive (A newer than
+// C by date, but both ordered against an undated B by number), which leaves Array
+// sort free to produce an arbitrary order.
+function sortTicketsForDisplay(tickets) {
+  if (ticketSortMode === 'alphabetical') {
+    return tickets.sort((a, b) => {
+      const bySubject = (a.Subject || '').localeCompare(b.Subject || '', undefined, { sensitivity: 'base' });
+      if (bySubject !== 0) return bySubject;
+      return ticketNumberValue(b) - ticketNumberValue(a);
+    });
+  }
+
+  const created = new Map(tickets.map((ticket) => [ticket, ticketCreatedValue(ticket)]));
+  const everyDateParsed = tickets.every((ticket) => created.get(ticket) !== null);
+
+  return tickets.sort((a, b) => {
+    if (everyDateParsed) {
+      const byCreated = created.get(b) - created.get(a);
+      if (byCreated !== 0) return byCreated;
+    }
+    return ticketNumberValue(b) - ticketNumberValue(a);
+  });
+}
+
+function updateTicketSortToggle() {
+  ticketsSortToggle.querySelectorAll('.sort-toggle-btn').forEach((button) => {
+    const active = button.dataset.sort === ticketSortMode;
+    button.classList.toggle('active', active);
+    button.setAttribute('aria-pressed', active ? 'true' : 'false');
+  });
+}
+
+// Re-rendering with no tickets loaded would replace whatever the panel is currently
+// showing (an empty list while the first fetch runs, or nothing at all next to the
+// Desk365 setup card) with "No tickets to show" — and there is nothing to reorder
+// anyway, so skip it.
+function renderTicketsIfLoaded() {
+  if (currentTickets.length) renderTickets();
+}
+
+// Called by settings.js whenever local settings are loaded or saved, so the toggle
+// reflects the saved per-machine preference on startup.
+window.applyTicketSort = function applyTicketSort(mode) {
+  const next = normalizeTicketSortMode(mode);
+  const changed = next !== ticketSortMode;
+  ticketSortMode = next;
+  updateTicketSortToggle();
+  if (changed) renderTicketsIfLoaded();
+};
+
+ticketsSortToggle.addEventListener('click', async (event) => {
+  const button = event.target.closest('.sort-toggle-btn');
+  if (!button) return;
+
+  const next = normalizeTicketSortMode(button.dataset.sort);
+  if (next === ticketSortMode) return;
+
+  const previous = ticketSortMode;
+  ticketSortMode = next;
+  updateTicketSortToggle();
+  renderTicketsIfLoaded();
+
+  // Reorder first, persist second: sorting is a pure view change, so it should feel
+  // instant. If the save fails, roll the view back rather than leave the list ordered
+  // one way and the stored preference the other.
+  if (typeof window.saveLocalSettingsPatch !== 'function') return;
+  try {
+    await window.saveLocalSettingsPatch({ ticketSort: next });
+  } catch (error) {
+    console.error('Failed to save ticket sort order:', error);
+    ticketSortMode = previous;
+    updateTicketSortToggle();
+    renderTicketsIfLoaded();
+    ticketsStatus.textContent = error.message || 'Could not save the ticket sort order.';
+  }
+});
+
+updateTicketSortToggle();
+
 function renderTickets() {
   const showHidden = showHiddenCheckbox.checked;
   const hiddenNumbers = hiddenTicketNumbers();
   ticketsList.innerHTML = '';
 
-  const filtered = showHidden
-    ? currentTickets
-    : currentTickets.filter((ticket) => !hiddenNumbers.has(ticket.TicketNumber));
+  const filtered = sortTicketsForDisplay(showHidden
+    ? [...currentTickets]
+    : currentTickets.filter((ticket) => !hiddenNumbers.has(ticket.TicketNumber)));
 
   if (!filtered.length) {
     ticketsList.innerHTML = '<div class="empty-state">No tickets to show</div>';
@@ -288,8 +392,8 @@ function applyTicketUpdate(newTickets, { priorSeenTicketNumbers = null, statusTe
     }
   }
 
-  newTickets.sort((a, b) => (parseInt(b.TicketNumber, 10) || 0) - (parseInt(a.TicketNumber, 10) || 0));
-
+  // Display order is decided in renderTickets (see sortTicketsForDisplay), so the
+  // fetched list is stored as-is.
   seenTicketNumbers = new Set(newTickets.map((ticket) => ticket.TicketNumber));
   currentTickets = newTickets;
   window.updateTabCount('tickets', currentTickets.length);

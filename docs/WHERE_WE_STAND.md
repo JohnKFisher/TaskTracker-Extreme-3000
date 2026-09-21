@@ -5,11 +5,11 @@ TaskTracker Extreme 3000
 
 ## Current Version / Build
 - Version source of truth: `version.json`
-- Current marketing version: `2.7.0`
-- Current build number: `29`
+- Current marketing version: `2.13.0`
+- Current build number: `48`
 
 ## Overall Status
-Working personal-use Tauri desktop app with a revisioned local/shared JSON data model, secure Desk365 credential storage, explicit shared-storage status reporting, and a checked-in deterministic version/build workflow. The app now includes optional Google Cloud Storage sync as an alternative to folder-based sync, adaptive reconcile polling that backs off during quiet periods, improved stale-task and stale-ticket visual feedback, and a fix for the expand-card-while-typing collapse bug.
+Working personal-use Tauri desktop app with a revisioned local/shared JSON data model, secure Desk365 credential storage, explicit shared-storage status reporting, and a checked-in deterministic version/build workflow. Since 2.7.0 it has gained bounded periodic reconciliation that removes deleted and trashed Desk365 tickets from the list, a Newest/A–Z ticket sort toggle, a third Notes section (Short-Term), and fixes for two per-machine preferences that were never actually being persisted.
 
 ## What Works Now
 - Sidebar desktop window with tray behavior, global shortcuts, and a quick-add window
@@ -29,8 +29,10 @@ Working personal-use Tauri desktop app with a revisioned local/shared JSON data 
 - Expanding a task card and typing no longer causes the card to close mid-edit when a remote sync fires; in-flight edits are preserved
 - Card expand/collapse has a smooth fade+slide animation on open
 - Card hover has a more pronounced 3D lift effect with a deeper matching shadow
-- Notes tab with persisted plain-JSON storage plus conflict-aware save blocking
+- Notes tab with three stacked sections — For next meeting, Short-Term, Long-Term — persisted as plain JSON with conflict-aware save blocking
+- Notes document schema v4 adds Short-Term; Long-Term keeps the original `generalNotes` key so older builds can still read it
 - Desk365 ticket integration with secure API-key storage and periodic polling
+- Tickets can be ordered newest-first or alphabetically by subject via a small toggle on the tickets status line; the choice is saved per machine and only re-renders the cached list
 - New ticket "+" button in the tickets bar opens the Desk365 create-ticket page; hidden until domain is configured
 - Optional shared sync folder for tasks, notes, Desk365 hostname, and hidden ticket state
 - Optional GCS (Google Cloud Storage) sync via service account key file + bucket name; takes priority over folder sync when configured
@@ -77,6 +79,7 @@ Working personal-use Tauri desktop app with a revisioned local/shared JSON data 
 - GCS sync is polling-only; worst-case change visibility is 5 minutes during quiet periods
 - GCS service account key file path is stored in local-settings.json (machine-local, not synced); each machine must configure GCS independently
 - Cloud-sync delays can postpone when another machine's file changes arrive, even with file watching and adaptive reconciliation
+- Shared JSON documents do not reject unknown fields, so a machine running an older build drops newer fields (such as Short-Term notes) the next time it saves
 - The project is tested primarily on the owner's own machines
 - Brief system-theme flash on launch before JS applies a saved non-Auto theme is a known cosmetic limitation
 
@@ -96,11 +99,13 @@ Working personal-use Tauri desktop app with a revisioned local/shared JSON data 
 - GCS service account key grants write access to the bucket; protect the key file like a password
 
 ## Recommended Next Priorities
-1. Smoke-test GCS sync end-to-end: configure credentials, run migrate, verify tasks appear on a second machine
-2. Smoke-test the update check banner on a machine running an older build
-3. Smoke-test the Windows sync-folder persistence path on a freshly downloaded new build
-4. Confirm multi-machine sync behavior on two real machines sharing the same cloud-synced folder
-5. Evaluate whether notes should move from a single shared blob to per-section or per-note storage to reduce conflict surface
+1. Hand-check the 2.13.0 renderer changes in the running app: three Notes sections load existing text, typing in Short-Term saves, and the ticket Newest/A–Z toggle reorders and survives a restart
+2. Update every syncing machine to 2.13.0 before relying on Short-Term notes — older builds drop the new field when they save
+3. Smoke-test GCS sync end-to-end: configure credentials, run migrate, verify tasks appear on a second machine
+4. Smoke-test the update check banner on a machine running an older build
+5. Smoke-test the Windows sync-folder persistence path on a freshly downloaded new build
+6. Confirm multi-machine sync behavior on two real machines sharing the same cloud-synced folder
+7. Evaluate whether notes should move from a single shared blob to per-section or per-note storage to reduce conflict surface
 
 ## Most Recent Durable Known-Good Anchor
-v2.7.0 — released 2026-05-06. Optional GCS sync with migration, adaptive reconcile backoff, improved stale tint visibility, stale ticket highlighting, card-stays-open-while-typing fix, and .icloud placeholder filtering all included.
+v2.12.0 (build 47) — merged 2026-09-02. Everything in v2.7.0 plus the bounded periodic reconcile that removes deleted and trashed Desk365 tickets from the list. This is the last state verified before the 2.13.0 work described above; 2.13.0 itself has passing Rust and version-script tests but its renderer changes have not yet been exercised by hand in the running app.
