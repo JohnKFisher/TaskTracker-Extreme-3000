@@ -76,7 +76,7 @@ impl<T: Serialize> CommandResponse<T> {
     }
 }
 
-#[derive(Debug, Serialize, Deserialize, Clone, Default, PartialEq, Eq)]
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 struct LocalSettings {
     #[serde(default)]
@@ -93,6 +93,38 @@ struct LocalSettings {
     gcs_credential_path: Option<String>,
     #[serde(default)]
     gcs_bucket: Option<String>,
+    /// "chronological" (newest first) or "alphabetical" (by subject). Stored as an
+    /// Option so normalize_local_settings can fill the default, which also covers the
+    /// derived Default used when local-settings.json does not exist yet.
+    #[serde(default)]
+    ticket_sort: Option<String>,
+    /// "auto" (follow the OS), "light", or "dark". Same Option-plus-normalize shape as
+    /// ticket_sort above, and for the same reason.
+    #[serde(default)]
+    color_theme: Option<String>,
+}
+
+// Written out by hand rather than derived: read_or_default falls back to this when
+// local-settings.json does not exist, so it has to produce the same values serde's field
+// defaults produce for an empty document. A derived Default silently ignores
+// #[serde(default = "...")] and hands back the type's own zero value — that mismatch is
+// what made show_standing_column default to hidden on a fresh install. Keep every field
+// here in step with its serde attribute above;
+// derived_default_matches_an_empty_settings_document fails if they drift apart.
+impl Default for LocalSettings {
+    fn default() -> Self {
+        Self {
+            sync_folder: None,
+            show_personal_tab: false,
+            show_standing_column: default_true(),
+            device_id: None,
+            startup_legacy_import_done: false,
+            gcs_credential_path: None,
+            gcs_bucket: None,
+            ticket_sort: None,
+            color_theme: None,
+        }
+    }
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone, Default, PartialEq, Eq)]
@@ -158,7 +190,7 @@ impl Default for TaskDocument {
 }
 
 fn notes_document_schema_version() -> u32 {
-    3
+    4
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]
@@ -178,7 +210,12 @@ struct NotesDocument {
     /// "For next meeting" section (schema v3+).
     #[serde(default)]
     meeting_notes: String,
-    /// "General" section (schema v3+).
+    /// "Short-Term" section (schema v4+). Absent in v3 documents, which load as empty.
+    #[serde(default)]
+    short_term_notes: String,
+    /// "Long-Term" section (schema v3+). Still stored under the original `generalNotes`
+    /// key: v4 only relabelled this section in the UI, so renaming the field would have
+    /// meant a migration that older builds sharing the same synced file could not read.
     #[serde(default)]
     general_notes: String,
 }
@@ -192,12 +229,15 @@ impl Default for NotesDocument {
             updated_by: None,
             content: String::new(),
             meeting_notes: String::new(),
+            short_term_notes: String::new(),
             general_notes: String::new(),
         }
     }
 }
 
-/// Migrate a v2 document (single `content` field) to v3 (two sections).
+/// Migrate older documents forward: v2 (single `content` field) to v3 (two sections),
+/// and v3 to v4, which only adds the Short-Term section — v3 documents simply load with
+/// it empty, and the existing General/Long-Term text stays where it is.
 fn normalize_notes_document(mut doc: NotesDocument) -> NotesDocument {
     if doc.general_notes.is_empty() && !doc.content.is_empty() {
         doc.general_notes = std::mem::take(&mut doc.content);
@@ -467,8 +507,25 @@ fn generate_device_id() -> String {
     format!("device-{}-{millis}", std::process::id())
 }
 
+fn normalize_ticket_sort(value: Option<String>) -> String {
+    match value.as_deref().map(str::trim) {
+        Some("alphabetical") => "alphabetical".to_string(),
+        _ => "chronological".to_string(),
+    }
+}
+
+fn normalize_color_theme(value: Option<String>) -> String {
+    match value.as_deref().map(str::trim) {
+        Some("light") => "light".to_string(),
+        Some("dark") => "dark".to_string(),
+        _ => "auto".to_string(),
+    }
+}
+
 fn normalize_local_settings(mut settings: LocalSettings) -> LocalSettings {
     settings.sync_folder = normalize_sync_folder(settings.sync_folder);
+    settings.ticket_sort = Some(normalize_ticket_sort(settings.ticket_sort));
+    settings.color_theme = Some(normalize_color_theme(settings.color_theme));
     settings.gcs_credential_path = settings
         .gcs_credential_path
         .and_then(|s| if s.trim().is_empty() { None } else { Some(s.trim().to_string()) });
@@ -2630,10 +2687,12 @@ async fn save_notes(
         updated_by: Some(device_id.clone()),
         content: document.content,
         meeting_notes: document.meeting_notes,
+        short_term_notes: document.short_term_notes,
         general_notes: document.general_notes,
     });
 
     let content_changed = incoming.meeting_notes != latest.meeting_notes
+        || incoming.short_term_notes != latest.short_term_notes
         || incoming.general_notes != latest.general_notes;
     if latest.revision != incoming.revision && content_changed {
         return Ok(CommandResponse::ok(NotesSaveResult {
@@ -2649,6 +2708,7 @@ async fn save_notes(
         updated_by: Some(device_id),
         content: String::new(),
         meeting_notes: incoming.meeting_notes,
+        short_term_notes: incoming.short_term_notes,
         general_notes: incoming.general_notes,
     };
 
@@ -3795,6 +3855,7 @@ async fn pick_sync_folder(app: AppHandle) -> CommandResponse<Option<String>> {
 fn write_archive_snapshot(
     tasks: Vec<TaskItem>,
     meeting_notes: String,
+    short_term_notes: String,
     general_notes: String,
     app: AppHandle,
 ) -> CommandResponse<()> {
@@ -3816,6 +3877,7 @@ fn write_archive_snapshot(
         "archivedAt": current_iso_timestamp(),
         "tasks": tasks,
         "meetingNotes": meeting_notes,
+        "shortTermNotes": short_term_notes,
         "generalNotes": general_notes,
     });
 
@@ -4205,12 +4267,14 @@ mod tests {
         hidden_ticket_schema_version, is_valid_gcs_bucket_name,
         is_valid_hostname, merge_hidden_tickets_documents, merge_missing_sync_folder,
         merge_task_documents, merge_ticket_into, migrate_legacy_secret_value,
-        normalize_hidden_tickets_document,
+        normalize_color_theme, normalize_hidden_tickets_document, read_local_settings_from_path,
         normalize_local_settings, normalize_path_value, normalize_task_document, normalize_task_orders,
-        normalize_ticket, normalize_ticket_timestamp, parse_hidden_tickets_document_content,
+        normalize_notes_document, normalize_ticket, normalize_ticket_sort,
+        normalize_ticket_timestamp, parse_hidden_tickets_document_content, write_json_file,
         ticket_is_trashed, ticket_timestamp_at_or_after, ticket_timestamp_parts,
         parse_task_document_content, parse_task_item_value, semver_tuple, AppError,
-        CredentialStore, HiddenTicketState, HiddenTicketsDocument, LocalSettings, TaskDocument,
+        CredentialStore, HiddenTicketState, HiddenTicketsDocument, LocalSettings, NotesDocument,
+        TaskDocument,
         TaskItem,
         TaskTombstone,
     };
@@ -4598,6 +4662,129 @@ mod tests {
         assert!(normalized.sync_folder.is_none());
         assert!(normalized.device_id.is_some());
         assert!(normalized.show_personal_tab);
+        assert_eq!(normalized.ticket_sort.as_deref(), Some("chronological"));
+        assert_eq!(normalized.color_theme.as_deref(), Some("auto"));
+    }
+
+    #[test]
+    fn normalizes_ticket_sort_to_a_known_mode() {
+        assert_eq!(normalize_ticket_sort(None), "chronological");
+        assert_eq!(normalize_ticket_sort(Some(String::new())), "chronological");
+        assert_eq!(
+            normalize_ticket_sort(Some("nonsense".to_string())),
+            "chronological"
+        );
+        assert_eq!(
+            normalize_ticket_sort(Some(" alphabetical ".to_string())),
+            "alphabetical"
+        );
+    }
+
+    // Schema v3 -> v4 must be purely additive: the two existing sections keep their
+    // text (Long-Term still living under the original `generalNotes` key) and the new
+    // Short-Term section simply starts empty.
+    #[test]
+    fn migrates_v3_notes_to_v4_without_touching_existing_sections() {
+        let v3 = r#"{
+            "schemaVersion": 3,
+            "revision": 177,
+            "content": "",
+            "meetingNotes": "agenda item",
+            "generalNotes": "long lived note"
+        }"#;
+
+        let migrated = normalize_notes_document(
+            serde_json::from_str::<NotesDocument>(v3).expect("valid v3 notes json"),
+        );
+
+        assert_eq!(migrated.schema_version, 4);
+        assert_eq!(migrated.meeting_notes, "agenda item");
+        assert_eq!(migrated.general_notes, "long lived note");
+        assert_eq!(migrated.short_term_notes, "");
+    }
+
+    // The v2 -> v4 path still has to work: a single `content` blob becomes the
+    // Long-Term section, not the new Short-Term one.
+    #[test]
+    fn migrates_v2_notes_content_into_the_long_term_section() {
+        let v2 = r#"{"schemaVersion": 2, "revision": 4, "content": "everything"}"#;
+
+        let migrated = normalize_notes_document(
+            serde_json::from_str::<NotesDocument>(v2).expect("valid v2 notes json"),
+        );
+
+        assert_eq!(migrated.schema_version, 4);
+        assert_eq!(migrated.general_notes, "everything");
+        assert_eq!(migrated.short_term_notes, "");
+        assert_eq!(migrated.meeting_notes, "");
+        assert_eq!(migrated.content, "");
+    }
+
+    // LocalSettings::default() is what read_or_default hands back when
+    // local-settings.json does not exist yet, while serde's field defaults apply when it
+    // does. Those two paths must agree, or a fresh install silently starts with
+    // different preferences than an empty settings file would give it — which is exactly
+    // how show_standing_column came to default to hidden on a new machine. Asserting the
+    // whole struct keeps every future field honest without needing its own test.
+    #[test]
+    fn derived_default_matches_an_empty_settings_document() {
+        let from_empty_json: LocalSettings =
+            serde_json::from_str("{}").expect("empty object is valid settings");
+        assert_eq!(LocalSettings::default(), from_empty_json);
+    }
+
+    #[test]
+    fn normalizes_color_theme_to_a_known_mode() {
+        assert_eq!(normalize_color_theme(None), "auto");
+        assert_eq!(normalize_color_theme(Some(String::new())), "auto");
+        assert_eq!(normalize_color_theme(Some("nonsense".to_string())), "auto");
+        assert_eq!(normalize_color_theme(Some("auto".to_string())), "auto");
+        assert_eq!(normalize_color_theme(Some(" light ".to_string())), "light");
+        assert_eq!(normalize_color_theme(Some("dark".to_string())), "dark");
+    }
+
+    // "Survives a restart" at the file layer: write local-settings.json the way
+    // save_local_settings does, then read it back the way startup does. This is the
+    // round trip the missing color_theme field used to break.
+    #[test]
+    fn color_theme_survives_a_write_then_read_of_local_settings() {
+        let path = std::env::temp_dir().join(format!(
+            "tasktracker-color-theme-{}-{}.json",
+            std::process::id(),
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+
+        let chosen = normalize_local_settings(LocalSettings {
+            color_theme: Some("dark".to_string()),
+            ..LocalSettings::default()
+        });
+        write_json_file(&path, &chosen).expect("settings should write");
+
+        let reloaded = read_local_settings_from_path(&path).expect("settings should read back");
+        let _ = fs::remove_file(&path);
+
+        assert_eq!(reloaded.color_theme.as_deref(), Some("dark"));
+        assert_eq!(reloaded.ticket_sort.as_deref(), Some("chronological"));
+    }
+
+    // The bug this guards against: colorTheme used to be absent from LocalSettings, so
+    // serde dropped it on the way in and save_local_settings wrote the file back
+    // without it — the theme silently reset on every launch.
+    #[test]
+    fn keeps_color_theme_through_a_deserialize_serialize_round_trip() {
+        let stored = r#"{"colorTheme":"dark","showPersonalTab":true}"#;
+        let settings: LocalSettings = serde_json::from_str(stored).expect("valid settings json");
+        let normalized = normalize_local_settings(settings);
+        assert_eq!(normalized.color_theme.as_deref(), Some("dark"));
+
+        let written = serde_json::to_string(&normalized).expect("serializable settings");
+        assert!(
+            written.contains("\"colorTheme\":\"dark\""),
+            "colorTheme must survive the write back to local-settings.json, got {written}"
+        );
     }
 
     #[test]

@@ -167,3 +167,28 @@ Status: approved
 ## 2026-05-06 — Skip .icloud placeholder files in shared-data watcher
 Rationale: iCloud Drive creates zero-byte .icloud placeholder files (e.g. tasks.json.icloud) when the real file has not yet downloaded locally. The file watcher was triggering on these paths and attempting to read them as valid JSON. Paths ending in .icloud are now filtered out before any read attempt.
 Status: approved
+
+## 2026-09-21 — Ticket sort toggle lives on the tickets status line, not the bottom bar
+Rationale: The tickets panel needed a quick switch between newest-first and alphabetical order. The bottom tickets bar (Refresh / Show hidden / Reconnect / +) is already full at the app's 380px default width, so a segmented Newest / A–Z control sits at the right of the existing status line instead, costing no new vertical space. The order is a view preference only — it re-renders the cached list and never re-fetches from Desk365 — and is stored in machine-local `local-settings.json` alongside the other layout preferences.
+Status: approved
+
+## 2026-09-21 — Chronological ticket order falls back to ticket number for the whole list
+Rationale: Desk365 `CreatedAt` values reach the renderer in whichever shape the tenant's API returned, so they are not guaranteed to parse. Rather than mixing a date key and a ticket-number key inside one comparator — which can be non-transitive and let the sort produce an arbitrary order — the renderer checks once whether every ticket in the list has a parseable date and sorts the whole list by date or by ticket number accordingly. Ticket numbers increase over time, so they remain a faithful chronological proxy.
+Status: approved
+
+## 2026-09-21 — Every per-machine preference must be a declared, normalized LocalSettings field
+Rationale: The color theme was saved through `saveLocalSettingsPatch` like every other per-machine preference, but `LocalSettings` had no matching `color_theme` field. Serde dropped the unknown key on the way in, and `save_local_settings` wrote the file back without it, so the preference silently reset on every launch while the UI and the docs both claimed it was saved. A renderer-side preference is therefore only considered persisted once it has a field on `LocalSettings` and a case in `normalize_local_settings`. Preferences with a fixed set of valid values are stored as `Option<String>` and normalized to a known value rather than relying on `#[serde(default = "...")]` alone, because the struct derives `Default` and `read_or_default` uses that derived default when `local-settings.json` does not exist yet — a serde field default would not cover that path.
+Status: approved
+
+## 2026-09-21 — Notes schema v4 adds Short-Term and relabels General as Long-Term without renaming its field
+Rationale: The Notes tab now carries three stacked sections — For next meeting, Short-Term, Long-Term. Short-Term is a genuinely new field (`shortTermNotes`), so the document schema moves to v4. Long-Term is only a relabelling of the old "General" section and deliberately keeps its original `generalNotes` storage key: renaming it would have required moving text that an older build sharing the same synced `notes.json` still expects under the old key, and that build would then show the section empty and save the emptiness back. Migration is therefore purely additive in both directions for existing content — v3 documents load with Short-Term empty, and v2's single `content` blob continues to land in Long-Term.
+Status: approved
+
+## 2026-09-21 — A new notes section is not readable by older builds sharing the same synced file
+Rationale: Because `NotesDocument` does not use `deny_unknown_fields`, a pre-v4 build that opens a v4 `notes.json` silently drops `shortTermNotes` and writes the document back without it, losing whatever was typed there. This is inherent to adding a field to a shared, multi-machine document rather than a defect in the v4 change, and it is the same hazard the v2-to-v3 split carried. Every machine syncing the same tasks and notes should be updated to the build that introduced Short-Term before that section is relied on.
+Status: approved
+
+## 2026-09-21 — LocalSettings implements Default by hand instead of deriving it
+Rationale: `read_or_default` returns `LocalSettings::default()` when `local-settings.json` is absent, but serde's `#[serde(default = "...")]` attributes only run when a document is actually parsed. A derived `Default` therefore produced a different set of preferences than an empty settings file would — `show_standing_column` came out `false` on a fresh install despite `default_true`, hiding the Standing column on every new machine. `Default` is now written out by hand to mirror the serde attributes field for field, and `derived_default_matches_an_empty_settings_document` asserts the two paths stay equal so a future field cannot reintroduce the split. This is the same root cause as the dropped `colorTheme` preference: per-machine settings must agree across every path that can produce them.
+Status: approved
+

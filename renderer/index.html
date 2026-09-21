@@ -153,7 +153,13 @@
   </div>
 
   <div id="tab-tickets" class="tab-content" role="tabpanel">
-    <div id="tickets-status" class="status-text" aria-live="polite"></div>
+    <div id="tickets-toolbar">
+      <div id="tickets-status" class="status-text" aria-live="polite"></div>
+      <div id="tickets-sort" class="sort-toggle" role="group" aria-label="Ticket sort order">
+        <button type="button" class="sort-toggle-btn" data-sort="chronological" title="Sort tickets newest first" aria-pressed="true">Newest</button>
+        <button type="button" class="sort-toggle-btn" data-sort="alphabetical" title="Sort tickets by subject, A to Z" aria-pressed="false">A–Z</button>
+      </div>
+    </div>
     <div id="tickets-list"></div>
 
     <div id="api-key-setup" class="card hidden">
@@ -181,8 +187,10 @@
   <div id="tab-notes" class="tab-content" role="tabpanel">
     <div class="notes-section-label">For next meeting</div>
     <textarea id="notes-meeting" placeholder="Notes for your next meeting..." aria-label="Meeting notes"></textarea>
-    <div class="notes-section-label">General</div>
-    <textarea id="notes-general" placeholder="General notes..." aria-label="General notes"></textarea>
+    <div class="notes-section-label">Short-Term</div>
+    <textarea id="notes-short-term" placeholder="Short-term notes..." aria-label="Short-term notes"></textarea>
+    <div class="notes-section-label">Long-Term</div>
+    <textarea id="notes-general" placeholder="Long-term notes..." aria-label="Long-term notes"></textarea>
   </div>
 
   <div id="tab-settings" class="tab-content" role="tabpanel">
